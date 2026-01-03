@@ -60,7 +60,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
-      url: https://pypi.org/p/pyalda
+      url: https://pypi.org/p/aldapy
     permissions:
       id-token: write
 

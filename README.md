@@ -1,6 +1,6 @@
-# pyalda
+# aldapy
 
-[![PyPI version](https://badge.fury.io/py/pyalda.svg)](https://pypi.org/project/pyalda/)
+[![PyPI version](https://badge.fury.io/py/aldapy.svg)](https://pypi.org/project/aldapy/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,13 +13,13 @@ A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.i
 Requires Python 3.10+
 
 ```sh
-pip install pyalda
+pip install aldapy
 ```
 
 Or with [uv](https://github.com/astral-sh/uv):
 
 ```sh
-uv add pyalda
+uv add aldapy
 ```
 
 ## Quick Start
@@ -28,22 +28,22 @@ uv add pyalda
 
 ```sh
 # Evaluate inline code
-pyalda -e "piano: c d e f g"
+aldapy -e "piano: c d e f g"
 
 # Interactive REPL
-pyalda repl
+aldapy repl
 
 # Play an Alda file (examples available in the repository)
-pyalda examples/twinkle.alda
+aldapy examples/twinkle.alda
 
 # Export to MIDI file
-pyalda examples/bach-prelude.alda -o bach.mid
+aldapy examples/bach-prelude.alda -o bach.mid
 ```
 
 ### Python API
 
 ```python
-from pyalda import parse, generate_midi, LibremidiBackend
+from aldapy import parse, generate_midi, LibremidiBackend
 
 # Parse Alda source code
 ast = parse("""
@@ -67,7 +67,7 @@ with LibremidiBackend() as backend:
 ## CLI Reference
 
 ```sh
-pyalda [-h] [--version] [-e CODE] [-o FILE] [--port NAME]
+aldapy [-h] [--version] [-e CODE] [-o FILE] [--port NAME]
        [--stdin] [--parse-only] [--no-wait] [-v]
        {repl,ports,play} [file]
 ```
@@ -97,22 +97,22 @@ pyalda [-h] [--version] [-e CODE] [-o FILE] [--port NAME]
 
 ```bash
 # Interactive REPL with syntax highlighting
-pyalda repl
+aldapy repl
 
 # List available MIDI ports
-pyalda ports
+aldapy ports
 
 # Play with verbose output
-pyalda -v examples/jazz.alda
+aldapy -v examples/jazz.alda
 
 # Read from stdin
-echo "piano: c d e f g" | pyalda -
+echo "piano: c d e f g" | aldapy -
 
 # Parse and show AST
-pyalda --parse-only -e "piano: c/e/g"
+aldapy --parse-only -e "piano: c/e/g"
 
 # Export to MIDI file
-pyalda examples/twinkle.alda -o twinkle.mid
+aldapy examples/twinkle.alda -o twinkle.mid
 ```
 
 ## Interactive REPL
@@ -120,7 +120,7 @@ pyalda examples/twinkle.alda -o twinkle.mid
 The REPL provides an interactive environment for composing and playing Alda code:
 
 ```bash
-pyalda repl
+aldapy repl
 ```
 
 Features:
@@ -272,20 +272,20 @@ All 128 General MIDI instruments are supported. Common examples:
 - `acoustic-guitar`, `electric-guitar-clean`, `electric-bass`
 - `choir`, `strings`, `brass-section`
 
-See [midi/types.py](https://github.com/shakfu/pyalda/blob/main/src/pyalda/midi/types.py) for the complete mapping.
+See [midi/types.py](https://github.com/shakfu/aldapy/blob/main/src/aldapy/midi/types.py) for the complete mapping.
 
 ## MIDI Backend
 
-pyalda uses [libremidi](https://github.com/jcelerier/libremidi) via [nanobind](https://github.com/wjakob/nanobind) for cross-platform MIDI I/O:
+aldapy uses [libremidi](https://github.com/jcelerier/libremidi) via [nanobind](https://github.com/wjakob/nanobind) for cross-platform MIDI I/O:
 
 - Low-latency realtime playback
-- Virtual MIDI port support (PyAldaMIDI), makes it easy to just send to your DAW.
+- Virtual MIDI port support (AldaPyMIDI), makes it easy to just send to your DAW.
 - Pure Python MIDI file writing (no external dependencies)
 - Cross-platform: macOS (CoreMIDI), Linux (ALSA), Windows (WinMM)
 - Supports hardware and software/virtual MIDI ports (FluidSynth, IAC Driver, etc.)
 
 ```python
-from pyalda import LibremidiBackend
+from aldapy import LibremidiBackend
 
 backend = LibremidiBackend()
 
@@ -303,10 +303,10 @@ backend.save(sequence, "output.mid")
 
 ### Virtual Port (Recommended)
 
-When no hardware MIDI ports are available, pyalda creates a virtual port named "PyAldaMIDI". This port is visible to DAWs and other MIDI software:
+When no hardware MIDI ports are available, aldapy creates a virtual port named "AldaPyMIDI". This port is visible to DAWs and other MIDI software:
 
-1. Start the REPL: `pyalda repl`
-2. In your DAW (Ableton Live, Logic Pro, etc.), look for "PyAldaMIDI" in MIDI input settings
+1. Start the REPL: `aldapy repl`
+2. In your DAW (Ableton Live, Logic Pro, etc.), look for "AldaPyMIDI" in MIDI input settings
 3. Play code in the REPL - notes will be sent to your DAW
 
 ### Software Synthesizer (FluidSynth)
@@ -327,16 +327,16 @@ sudo apt install fluidsynth
 # Start FluidSynth with CoreMIDI (macOS)
 fluidsynth -a coreaudio -m coremidi ~/Music/sf2/FluidR3_GM.sf2
 
-# In another terminal, start pyalda
-pyalda repl
-# pyalda> piano: c d e f g
+# In another terminal, start aldapy
+aldapy repl
+# aldapy> piano: c d e f g
 ```
 
-A helper script is available in the [repository](https://github.com/shakfu/pyalda/tree/main/scripts):
+A helper script is available in the [repository](https://github.com/shakfu/aldapy/tree/main/scripts):
 
 ```sh
 # Set the SoundFont directory (add to your shell profile)
-export PYALDA_SF2_DIR=~/Music/sf2
+export ALDAPY_SF2_DIR=~/Music/sf2
 
 # Run with default SoundFont (FluidR3_GM.sf2)
 python scripts/fluidsynth-gm.py
@@ -354,10 +354,10 @@ Connect a USB MIDI interface or synthesizer, then:
 
 ```sh
 # List available ports
-pyalda ports
+aldapy ports
 
 # Play to a specific port
-pyalda --port "My MIDI Device" examples/twinkle.alda
+aldapy --port "My MIDI Device" examples/twinkle.alda
 ```
 
 ### MIDI File Export
@@ -366,7 +366,7 @@ If you don't have MIDI playback set up, export to a file:
 
 ```bash
 # Save to MIDI file
-pyalda examples/twinkle.alda -o twinkle.mid
+aldapy examples/twinkle.alda -o twinkle.mid
 
 # Open with default app
 open twinkle.mid
@@ -377,8 +377,8 @@ open twinkle.mid
 ### Setup
 
 ```sh
-git clone https://github.com/shakfu/pyalda.git
-cd pyalda
+git clone https://github.com/shakfu/aldapy.git
+cd aldapy
 make  # Build the libremidi extension
 ```
 
@@ -392,7 +392,7 @@ uv run pytest tests/ -v
 
 ### Architecture
 
-![pyalda architecture](https://raw.githubusercontent.com/shakfu/pyalda/main/docs/assets/architecture.svg)
+![aldapy architecture](https://raw.githubusercontent.com/shakfu/aldapy/main/docs/assets/architecture.svg)
 
 ## License
 
@@ -402,6 +402,6 @@ MIT
 
 - [Alda](https://alda.io) - The original Alda language and reference implementation
 - [Alda Cheat Sheet](https://alda.io/cheat-sheet/) - Syntax reference
-- [Extending pyalda](https://github.com/shakfu/pyalda/blob/main/docs/extending-pyalda.md) - Design document for programmatic API
+- [Extending aldapy](https://github.com/shakfu/aldapy/blob/main/docs/extending-aldapy.md) - Design document for programmatic API
 - [libremidi](https://github.com/celtera/libremidi) - A modern C++ MIDI 1 / MIDI 2 real-time & file I/O library. Supports Windows, macOS, Linux and WebMIDI.
 - [nanobind](https://github.com/wjakob/nanobind) - a tiny and efficient C++/Python bindings

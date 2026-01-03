@@ -1,10 +1,10 @@
-# Extending pyalda: A Programmatic API
+# Extending aldapy: A Programmatic API
 
-This document explores extending pyalda beyond parsing the Alda language to provide a programmatic Python API for music composition. The key insight is that **the AST is the central hub** - all inputs flow into it, all outputs derive from it.
+This document explores extending aldapy beyond parsing the Alda language to provide a programmatic Python API for music composition. The key insight is that **the AST is the central hub** - all inputs flow into it, all outputs derive from it.
 
 ## Architecture Overview
 
-![pyalda architecture](assets/architecture.svg)
+![aldapy architecture](assets/architecture.svg)
 
 **AST as the central hub** - symmetric operations:
 
@@ -63,7 +63,7 @@ melody.invert()       # Invert intervals
 ### Core Domain Objects
 
 ```python
-from pyalda.compose import (
+from aldapy.compose import (
     Score, Part, Voice,
     note, rest, chord, seq,
     tempo, volume, octave,
@@ -110,7 +110,7 @@ chord("c", "e", "g")                              # Shorthand
 chord("c", "e", "g", duration=1)                  # c1/e/g
 
 # Named chords (convenience constructors)
-from pyalda.compose.chords import major, minor, dim, aug, dom7
+from aldapy.compose.chords import major, minor, dim, aug, dom7
 
 major("c")                   # c/e/g
 minor("a")                   # a/c/e
@@ -159,7 +159,7 @@ octave_up()                  # >
 octave_down()                # <
 
 # Dynamics
-from pyalda.compose import pp, p, mp, mf, f, ff
+from aldapy.compose import pp, p, mp, mf, f, ff
 ```
 
 ### The Score Class
@@ -209,12 +209,12 @@ class Score:
 
     def to_midi(self) -> "MidiSequence":
         """Generate MIDI sequence."""
-        from pyalda import generate_midi
+        from aldapy import generate_midi
         return generate_midi(self.to_ast())
 
     def play(self, backend=None):
         """Play the score."""
-        from pyalda import LibremidiBackend
+        from aldapy import LibremidiBackend
         backend = backend or LibremidiBackend()
         backend.play(self.to_midi())
 
@@ -223,7 +223,7 @@ class Score:
         if path.endswith(".alda"):
             Path(path).write_text(self.to_alda())
         elif path.endswith(".mid"):
-            from pyalda import LibremidiBackend
+            from aldapy import LibremidiBackend
             LibremidiBackend().save(self.to_midi(), path)
 ```
 
@@ -233,7 +233,7 @@ class Score:
 
 ```python
 import random
-from pyalda.compose import Score, Part, note, chord, seq, tempo
+from aldapy.compose import Score, Part, note, chord, seq, tempo
 
 def random_melody(length=8, scale=["c", "d", "e", "f", "g", "a", "b"]):
     """Generate a random melody from a scale."""
@@ -254,7 +254,7 @@ score.play()
 ### 2. Data Sonification
 
 ```python
-from pyalda.compose import Score, Part, note, tempo
+from aldapy.compose import Score, Part, note, tempo
 
 def weather_to_music(temperatures: list[float]):
     """Convert temperature data to music."""
@@ -281,8 +281,8 @@ weather_to_music(temps).play()
 ### 3. Music Theory Operations
 
 ```python
-from pyalda.compose import Score, Part, seq, rest
-from pyalda.compose.transform import transpose, invert, reverse
+from aldapy.compose import Score, Part, seq, rest
+from aldapy.compose.transform import transpose, invert, reverse
 
 # Define a motif
 motif = seq.from_alda("c8 d e- g")
@@ -306,7 +306,7 @@ score.play()
 ### 4. Live Coding / REPL Workflow
 
 ```python
->>> from pyalda.compose import Score, Part, note, chord, tempo
+>>> from aldapy.compose import Score, Part, note, chord, tempo
 >>> s = Score()
 >>> s.add(Part("piano"), tempo(120))
 >>> s.add(note("c", 4), note("e"), note("g"))
@@ -328,8 +328,8 @@ c1/e/g
 
 ```python
 # Load an Alda file, modify it, save back
-from pyalda import parse
-from pyalda.compose import Score
+from aldapy import parse
+from aldapy.compose import Score
 
 # Parse existing Alda file to AST
 with open("song.alda") as f:
@@ -381,7 +381,7 @@ score.save("song_transposed.alda")
 ## Module Structure
 
 ```text
-src/pyalda/
+src/aldapy/
   compose/
     __init__.py       # Public API exports
     core.py           # note, rest, chord, seq
@@ -401,7 +401,7 @@ Transformers are functions that take a sequence (or MIDI data) and return a modi
 ### Pitch Transformers
 
 ```python
-from pyalda.compose.transform import transpose, invert, reverse, shuffle
+from aldapy.compose.transform import transpose, invert, reverse, shuffle
 
 melody = seq.from_alda("c d e f g")
 
@@ -415,7 +415,7 @@ shuffle(melody)             # Random permutation of notes
 ### Timing Transformers
 
 ```python
-from pyalda.compose.transform import quantize, humanize, swing, stretch
+from aldapy.compose.transform import quantize, humanize, swing, stretch
 
 # Quantize to grid (snap to nearest division)
 quantize(melody, 16)        # Quantize to 16th notes
@@ -437,7 +437,7 @@ stretch(melody, 0.5)        # Half duration (double speed)
 ### Velocity Transformers
 
 ```python
-from pyalda.compose.transform import accent, crescendo, diminuendo, normalize
+from aldapy.compose.transform import accent, crescendo, diminuendo, normalize
 
 accent(melody, pattern=[1, 0, 0, 0])  # Accent every 4th note
 crescendo(melody, start=40, end=100)  # Gradually increase velocity
@@ -448,7 +448,7 @@ normalize(melody, target=80)          # Normalize all velocities
 ### Structural Transformers
 
 ```python
-from pyalda.compose.transform import (
+from aldapy.compose.transform import (
     augment, diminish, fragment, loop, interleave
 )
 
@@ -462,7 +462,7 @@ interleave(melody1, melody2)  # Alternate notes from each
 ### Chaining Transformers
 
 ```python
-from pyalda.compose.transform import pipe
+from aldapy.compose.transform import pipe
 
 # Apply multiple transformations
 result = pipe(
@@ -483,7 +483,7 @@ Generative functions create musical material algorithmically, useful for composi
 ### Random Selection
 
 ```python
-from pyalda.compose.generate import random_note, random_choice, weighted_choice
+from aldapy.compose.generate import random_note, random_choice, weighted_choice
 
 # Random note from scale
 random_note(scale=["c", "d", "e", "g", "a"])  # Pentatonic
@@ -506,7 +506,7 @@ weighted_choice([
 ### Random Walk
 
 ```python
-from pyalda.compose.generate import random_walk, drunk_walk
+from aldapy.compose.generate import random_walk, drunk_walk
 
 # Random walk: each step is random interval from previous
 random_walk(
@@ -528,7 +528,7 @@ drunk_walk(
 ### Probability-Based Generation
 
 ```python
-from pyalda.compose.generate import probability_seq, rest_probability
+from aldapy.compose.generate import probability_seq, rest_probability
 
 # Each note has probability of appearing
 probability_seq(
@@ -545,7 +545,7 @@ rest_probability(melody, probability=0.2)  # 20% of notes become rests
 ### Euclidean Rhythms
 
 ```python
-from pyalda.compose.generate import euclidean
+from aldapy.compose.generate import euclidean
 
 # Euclidean rhythm: distribute k hits over n steps
 euclidean(hits=3, steps=8, note="c")   # [x . . x . . x .]
@@ -559,7 +559,7 @@ euclidean(hits=3, steps=8, note="c", rotate=1)  # Rotate pattern
 ### Markov Chains
 
 ```python
-from pyalda.compose.generate import markov_chain, learn_markov
+from aldapy.compose.generate import markov_chain, learn_markov
 
 # Define transition probabilities manually
 chain = markov_chain({
@@ -582,7 +582,7 @@ learned2 = learn_markov(existing_melody, order=2)
 ### L-Systems (Lindenmayer Systems)
 
 ```python
-from pyalda.compose.generate import lsystem
+from aldapy.compose.generate import lsystem
 
 # Define L-system rules
 rules = {
@@ -608,7 +608,7 @@ melody = lsystem(
 ### Cellular Automata
 
 ```python
-from pyalda.compose.generate import cellular_automaton
+from aldapy.compose.generate import cellular_automaton
 
 # Rule 30, 90, 110, etc.
 melody = cellular_automaton(
@@ -623,8 +623,8 @@ melody = cellular_automaton(
 ### Combining Generators
 
 ```python
-from pyalda.compose import Score
-from pyalda.compose.generate import euclidean, random_walk, markov_chain
+from aldapy.compose import Score
+from aldapy.compose.generate import euclidean, random_walk, markov_chain
 
 # Layer different generative techniques
 score = Score()
@@ -669,7 +669,7 @@ The architecture supports two forms of MIDI import:
 ### MIDI File Import
 
 ```python
-from pyalda import import_midi
+from aldapy import import_midi
 
 # Import a MIDI file to AST
 ast = import_midi("recording.mid")
@@ -687,7 +687,7 @@ save(ast_transposed, "transposed.mid")
 ### Real-time MIDI Transcription
 
 ```python
-from pyalda import MidiInput
+from aldapy import MidiInput
 
 # Transcribe live MIDI input to Alda
 with MidiInput() as midi_in:
@@ -704,10 +704,10 @@ These features would enable:
 
 ## Conclusion
 
-By treating the **AST as the central hub**, pyalda provides a unified platform where:
+By treating the **AST as the central hub**, aldapy provides a unified platform where:
 
 1. **Multiple inputs** (Alda text, Python API, MIDI) all flow into AST
 2. **Multiple outputs** (playback, MIDI files, Alda text) all derive from AST
 3. **Symmetric operations** enable round-trip transformations
 
-This positions pyalda as a complete platform for music programming in Python, whether you prefer text-based notation, programmatic construction, or MIDI-based workflows.
+This positions aldapy as a complete platform for music programming in Python, whether you prefer text-based notation, programmatic construction, or MIDI-based workflows.

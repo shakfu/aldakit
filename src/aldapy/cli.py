@@ -13,7 +13,7 @@ from .errors import AldaParseError
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser."""
     parser = argparse.ArgumentParser(
-        prog="pyalda",
+        prog="aldapy",
         description="Parse and play Alda music files.",
     )
 
@@ -136,7 +136,7 @@ def stdin_mode(port_name: str | None, verbose: bool) -> int:
     backend = LibremidiBackend(port_name=port_name)
     backend._ensure_port_open()
 
-    print("PyAldaMIDI port open. Paste alda code, blank line to play. Ctrl+C to exit.")
+    print("AldaPyMIDI port open. Paste alda code, blank line to play. Ctrl+C to exit.")
 
     try:
         while True:

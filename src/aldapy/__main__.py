@@ -1,4 +1,4 @@
-"""Allow running pyalda as a module: python -m pyalda"""
+"""Allow running aldapy as a module: python -m aldapy"""
 
 from .cli import main
 

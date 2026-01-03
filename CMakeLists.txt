@@ -10,7 +10,7 @@ if(CMAKE_HOST_WIN32)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
-project(pyalda_project LANGUAGES CXX)
+project(aldapy_project LANGUAGES CXX)
 
 # use ccache if available
 find_program(CCACHE_PROGRAM ccache)

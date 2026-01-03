@@ -1,8 +1,8 @@
-"""Tests for the pyalda parser."""
+"""Tests for the aldapy parser."""
 
 import pytest
-from pyalda.parser import parse
-from pyalda.ast_nodes import (
+from aldapy.parser import parse
+from aldapy.ast_nodes import (
     RootNode,
     PartNode,
     EventSequenceNode,
@@ -29,7 +29,7 @@ from pyalda.ast_nodes import (
     OnRepetitionsNode,
     BracketedSequenceNode,
 )
-from pyalda.errors import AldaSyntaxError
+from aldapy.errors import AldaSyntaxError
 
 
 class TestBasicParsing:

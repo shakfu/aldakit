@@ -10,7 +10,7 @@ endef
 all: sync
 
 sync:
-	@uv sync --reinstall-package pyalda
+	@uv sync --reinstall-package aldapy
 
 resync: reset sync
 
@@ -22,7 +22,6 @@ wheel:
 
 release:
 	@uv build --sdist
-	@uv build --wheel --python 3.9
 	@uv build --wheel --python 3.10
 	@uv build --wheel --python 3.11
 	@uv build --wheel --python 3.12
@@ -39,7 +38,7 @@ lint:
 	@uv run ruff check --fix src/ tests/
 
 typecheck:
-	@uv run ty check src/pyalda/
+	@uv run ty check src/aldapy/
 
 check:
 	@uv run twine check dist/*

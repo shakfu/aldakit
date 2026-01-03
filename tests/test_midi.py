@@ -1,7 +1,7 @@
 """Tests for MIDI generation."""
 
-from pyalda import parse, generate_midi
-from pyalda.midi import (
+from aldapy import parse, generate_midi
+from aldapy.midi import (
     MidiSequence,
     note_to_midi,
     INSTRUMENT_PROGRAMS,

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Start FluidSynth with General MIDI SoundFont for use with pyalda.
+"""Start FluidSynth with General MIDI SoundFont for use with aldapy.
 
 Environment variables:
-    PYALDA_SF2_DIR      Directory containing SoundFont files
-    PYALDA_SF2_DEFAULT  Default SoundFont filename (default: FluidR3_GM.sf2)
+    ALDAPY_SF2_DIR      Directory containing SoundFont files
+    ALDAPY_SF2_DEFAULT  Default SoundFont filename (default: FluidR3_GM.sf2)
 """
 
 import argparse
@@ -21,7 +21,7 @@ PLATFORM_DRIVERS: dict[str, tuple[str, str]] = {
 
 def get_sf2_dir() -> Path | None:
     """Get SoundFont directory from environment variable."""
-    if sf2_dir := os.environ.get("PYALDA_SF2_DIR"):
+    if sf2_dir := os.environ.get("ALDAPY_SF2_DIR"):
         return Path(sf2_dir).expanduser()
     return None
 
@@ -31,7 +31,7 @@ def get_default_sf2() -> Path | None:
     sf2_dir = get_sf2_dir()
     if sf2_dir is None:
         return None
-    default_name = os.environ.get("PYALDA_SF2_DEFAULT", "FluidR3_GM.sf2")
+    default_name = os.environ.get("ALDAPY_SF2_DEFAULT", "FluidR3_GM.sf2")
     return sf2_dir / default_name
 
 
@@ -54,12 +54,12 @@ def parse_args() -> argparse.Namespace:
     sf2_dir = get_sf2_dir()
 
     parser = argparse.ArgumentParser(
-        description="Start FluidSynth with General MIDI SoundFont for use with pyalda.",
+        description="Start FluidSynth with General MIDI SoundFont for use with aldapy.",
         epilog=(
             "Environment variables:\n"
-            "  PYALDA_SF2_DIR      Directory containing SoundFont files\n"
-            "  PYALDA_SF2_DEFAULT  Default SoundFont filename (default: FluidR3_GM.sf2)\n\n"
-            "Once running, start pyalda in another terminal: pyalda repl"
+            "  ALDAPY_SF2_DIR      Directory containing SoundFont files\n"
+            "  ALDAPY_SF2_DEFAULT  Default SoundFont filename (default: FluidR3_GM.sf2)\n\n"
+            "Once running, start aldapy in another terminal: aldapy repl"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -104,7 +104,7 @@ def main() -> int:
 
     if args.list:
         if sf2_dir is None:
-            print("PYALDA_SF2_DIR environment variable is not set.")
+            print("ALDAPY_SF2_DIR environment variable is not set.")
             print("Set it to the directory containing your SoundFont files.")
             return 1
         available = find_soundfonts(sf2_dir)
@@ -117,13 +117,13 @@ def main() -> int:
         return 0
 
     if args.soundfont is None:
-        print("No SoundFont specified and PYALDA_SF2_DIR is not set.")
+        print("No SoundFont specified and ALDAPY_SF2_DIR is not set.")
         print()
         print("Either provide a SoundFont path as an argument:")
         print("  python fluidsynth-gm.py /path/to/soundfont.sf2")
         print()
         print("Or set the environment variable:")
-        print("  export PYALDA_SF2_DIR=~/Music/sf2")
+        print("  export ALDAPY_SF2_DIR=~/Music/sf2")
         return 1
 
     sf2_path = args.soundfont.expanduser().resolve()
@@ -147,7 +147,7 @@ def main() -> int:
 
     print(f"Starting FluidSynth with: {sf2_path.name}")
     print(f"Audio driver: {audio_driver}, MIDI driver: {midi_driver}")
-    print("Connect pyalda via: pyalda repl")
+    print("Connect aldapy via: aldapy repl")
     print("Press Ctrl+C to stop")
     print()
 

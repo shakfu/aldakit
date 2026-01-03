@@ -1,6 +1,6 @@
 [project]
-name = "pyalda"
-version = "0.1.1"
+name = "aldapy"
+version = "0.1.2"
 description = "Python parser and MIDI generator for the Alda music programming language"
 readme = "README.md"
 license = "MIT"
@@ -27,10 +27,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/shakfu/pyalda"
-Repository = "https://github.com/shakfu/pyalda"
-Documentation = "https://github.com/shakfu/pyalda#readme"
-Changelog = "https://github.com/shakfu/pyalda/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/shakfu/aldapy"
+Repository = "https://github.com/shakfu/aldapy"
+Documentation = "https://github.com/shakfu/aldapy#readme"
+Changelog = "https://github.com/shakfu/aldapy/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-pyalda = "pyalda.cli:main"
+aldapy = "aldapy.cli:main"
 
 [build-system]
 requires = ["scikit-build-core >=0.10", "nanobind >=1.3.2"]
@@ -64,7 +64,7 @@ sdist.exclude = []
 wheel.exclude = [
     "include/**",
     "lib/**",
-    "pyalda/_libremidi.cpp",
+    "aldapy/_libremidi.cpp",
 ]
 
 [tool.pytest.ini_options]
@@ -72,7 +72,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.ruff]
-exclude = ["src/pyalda/ext"]
+exclude = ["src/aldapy/ext"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
@@ -80,9 +80,9 @@ ignore = ["E501"]
 
 [tool.ty.src]
 exclude = [
-    "src/pyalda/ext",
-    "src/pyalda/repl.py",
-    "src/pyalda/midi/backends/libremidi_backend.py",
+    "src/aldapy/ext",
+    "src/aldapy/repl.py",
+    "src/aldapy/midi/backends/libremidi_backend.py",
 ]
 
 [tool.cibuildwheel]
@@ -91,7 +91,7 @@ build = "cp310-* cp311-* cp312-* cp313-*"
 # Skip 32-bit builds and musllinux (no ALSA headers)
 skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 # Simple test to verify import works
-test-command = "python -c \"from pyalda import parse; print(parse('piano: c d e'))\""
+test-command = "python -c \"from aldapy import parse; print(parse('piano: c d e'))\""
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64", "aarch64"]

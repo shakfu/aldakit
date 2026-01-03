@@ -61,7 +61,7 @@ class LibremidiBackend(MidiBackend):
             self._port_opened = True
         else:
             # Create a virtual port
-            self._midi_out.open_virtual_port("PyAldaMIDI")
+            self._midi_out.open_virtual_port("AldaPyMIDI")
             self._port_opened = True
 
     def _send_note_on(self, channel: int, note: int, velocity: int) -> None:
