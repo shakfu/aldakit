@@ -43,25 +43,42 @@ aldakit examples/bach-prelude.alda -o bach.mid
 ### Python API
 
 ```python
-from aldakit import parse, generate_midi, LibremidiBackend
+import aldakit
 
-# Parse Alda source code
-ast = parse("""
+# Play directly
+aldakit.play("piano: c d e f g")
+
+# Save to MIDI file
+aldakit.save("piano: c d e f g", "output.mid")
+
+# Play from file
+aldakit.play_file("song.alda")
+
+# List available MIDI ports
+print(aldakit.list_ports())
+```
+
+For more control, use the `Score` class:
+
+```python
+from aldakit import Score
+
+score = Score("""
 piano:
   (tempo 120)
   o4 c4 d e f | g a b > c
 """)
 
-# Generate MIDI sequence
-sequence = generate_midi(ast)
+# Play with options
+score.play(port="FluidSynth", wait=False)
 
 # Save to file
-backend = LibremidiBackend()
-backend.save(sequence, "output.mid")
+score.save("output.mid")
 
-# Or play directly
-with LibremidiBackend() as backend:
-    backend.play(sequence)
+# Access internals
+print(f"Duration: {score.duration}s")
+print(score.ast)   # Parsed AST
+print(score.midi)  # MIDI sequence
 ```
 
 ## CLI Reference
@@ -285,18 +302,19 @@ aldakit uses [libremidi](https://github.com/jcelerier/libremidi) via [nanobind](
 - Supports hardware and software/virtual MIDI ports (FluidSynth, IAC Driver, etc.)
 
 ```python
-from aldakit import LibremidiBackend
-
-backend = LibremidiBackend()
+import aldakit
 
 # List available ports
-print(backend.list_output_ports())
+print(aldakit.list_ports())
 
 # Play to virtual port (visible in DAWs like Ableton Live)
-backend.play(sequence)
+aldakit.play("piano: c d e f g")
+
+# Play to a specific port
+aldakit.play("piano: c d e f g", port="FluidSynth")
 
 # Save to MIDI file
-backend.save(sequence, "output.mid")
+aldakit.save("piano: c d e f g", "output.mid")
 ```
 
 ## MIDI Playback Setup

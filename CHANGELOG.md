@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### High-Level Python API
+
+- New `Score` class for working with Alda music (`from aldakit import Score`)
+  - `Score(source)` and `Score.from_file(path)` constructors
+  - `play(port=None, wait=True)` method for MIDI playback
+  - `save(path)` method for MIDI file export
+  - Lazy `ast` and `midi` properties (computed and cached on first access)
+  - `duration` property for total score length in seconds
+- Module-level convenience functions for one-liner usage:
+  - `aldakit.play(source)` - parse and play Alda code
+  - `aldakit.play_file(path)` - parse and play an Alda file
+  - `aldakit.save(source, path)` - parse and save as MIDI
+  - `aldakit.save_file(source_path, output_path)` - convert Alda file to MIDI
+  - `aldakit.list_ports()` - list available MIDI output ports
+
 ## [0.1.3]
 
 ### Changed

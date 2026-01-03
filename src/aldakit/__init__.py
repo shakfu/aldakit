@@ -3,6 +3,8 @@
 from .tokens import Token, TokenType, SourcePosition
 from .scanner import Scanner
 from .parser import Parser, parse
+from .score import Score
+from .api import play, play_file, save, save_file, list_ports
 from .ast_nodes import (
     ASTNode,
     ASTVisitor,
@@ -53,6 +55,13 @@ __version__ = "0.1.3"
 
 
 __all__ = [
+    # High-level API
+    "Score",
+    "play",
+    "play_file",
+    "save",
+    "save_file",
+    "list_ports",
     # Convenience function
     "parse",
     # Core classes
