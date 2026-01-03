@@ -7,7 +7,7 @@ license = "MIT"
 requires-python = ">=3.10"
 dependencies = []
 authors = [
-    { name = "Shakeeb Alireza", email = "salireza@gmail.com" }
+    { name = "Shakeeb Alireza", email = "me@example.com" }
 ]
 keywords = ["alda", "midi", "music", "parser", "composition", "audio"]
 classifiers = [
@@ -79,7 +79,11 @@ select = ["E", "F", "W"]
 ignore = ["E501"]
 
 [tool.ty.src]
-exclude = ["src/pyalda/ext", "src/pyalda/repl.py", "src/pyalda/midi/backends/libremidi_backend.py"]
+exclude = [
+    "src/pyalda/ext",
+    "src/pyalda/repl.py",
+    "src/pyalda/midi/backends/libremidi_backend.py",
+]
 
 [tool.cibuildwheel]
 # Build for Python 3.10-3.13

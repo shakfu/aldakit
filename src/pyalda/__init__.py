@@ -48,6 +48,10 @@ from .midi import (
     LibremidiBackend,
 )
 
+
+__version__ = "0.1.1"
+
+
 __all__ = [
     # Convenience function
     "parse",

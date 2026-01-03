@@ -1,8 +1,16 @@
 # pyalda
 
-A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.io) music programming language.
+[![PyPI version](https://badge.fury.io/py/pyalda.svg)](https://pypi.org/project/pyalda/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.io) music programming language[^1].
+
+[^1]: Includes a rich repl and native MIDI support via bundled [prompt-toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit) and [libremidi](https://github.com/jcelerier/libremidi) respectively.
 
 ## Installation
+
+Requires Python 3.10+
 
 ```sh
 pip install pyalda
@@ -19,17 +27,17 @@ uv add pyalda
 ### Command Line
 
 ```sh
-# Play an Alda file
-pyalda examples/twinkle.alda
-
 # Evaluate inline code
 pyalda -e "piano: c d e f g"
 
-# Export to MIDI file
-pyalda examples/bach-prelude.alda -o bach.mid
-
 # Interactive REPL
 pyalda repl
+
+# Play an Alda file (examples available in the repository)
+pyalda examples/twinkle.alda
+
+# Export to MIDI file
+pyalda examples/bach-prelude.alda -o bach.mid
 ```
 
 ### Python API
@@ -120,6 +128,7 @@ Features:
 - Syntax highlighting
 - Auto-completion for instruments (3+ characters)
 - Command history (persistent across sessions)
+- Multi-line paste (use platform-specific paste: ctrl-v, shift-ctrl-v, cmd-v, etc.)
 - Multi-line input (Alt+Enter)
 - MIDI playback control (Ctrl+C to stop)
 
@@ -263,14 +272,14 @@ All 128 General MIDI instruments are supported. Common examples:
 - `acoustic-guitar`, `electric-guitar-clean`, `electric-bass`
 - `choir`, `strings`, `brass-section`
 
-See `src/pyalda/midi/types.py` for the complete mapping.
+See [midi/types.py](https://github.com/shakfu/pyalda/blob/main/src/pyalda/midi/types.py) for the complete mapping.
 
 ## MIDI Backend
 
-pyalda uses [libremidi](https://github.com/jcelerier/libremidi) via nanobind for cross-platform MIDI I/O:
+pyalda uses [libremidi](https://github.com/jcelerier/libremidi) via [nanobind](https://github.com/wjakob/nanobind) for cross-platform MIDI I/O:
 
 - Low-latency realtime playback
-- Virtual MIDI port support (PyAldaMIDI)
+- Virtual MIDI port support (PyAldaMIDI), makes it easy to just send to your DAW.
 - Pure Python MIDI file writing (no external dependencies)
 - Cross-platform: macOS (CoreMIDI), Linux (ALSA), Windows (WinMM)
 - Supports hardware and software/virtual MIDI ports (FluidSynth, IAC Driver, etc.)
@@ -308,7 +317,11 @@ For high-quality General MIDI playback without hardware, use [FluidSynth](https:
 # Install FluidSynth (macOS)
 brew install fluidsynth
 
+# Install FluidSynth (Debian/Ubuntu)
+sudo apt install fluidsynth 
+
 # Download a SoundFont (e.g., FluidR3_GM.sf2)
+# eg. sudo apt install fluid-soundfont-gm
 # Place in ~/Music/sf2/
 
 # Start FluidSynth with CoreMIDI (macOS)
@@ -319,11 +332,20 @@ pyalda repl
 # pyalda> piano: c d e f g
 ```
 
-A helper script is included:
+A helper script is available in the [repository](https://github.com/shakfu/pyalda/tree/main/scripts):
 
 ```sh
-./scripts/fluidsynth-gm.sh           # Uses ~/Music/sf2/FluidR3_GM.sf2
-./scripts/fluidsynth-gm.sh path.sf2  # Use custom SoundFont
+# Set the SoundFont directory (add to your shell profile)
+export PYALDA_SF2_DIR=~/Music/sf2
+
+# Run with default SoundFont (FluidR3_GM.sf2)
+python scripts/fluidsynth-gm.py
+
+# Or specify a SoundFont directly
+python scripts/fluidsynth-gm.py /path/to/soundfont.sf2
+
+# List available SoundFonts
+python scripts/fluidsynth-gm.py --list
 ```
 
 ### Hardware MIDI
@@ -357,7 +379,6 @@ open twinkle.mid
 ```sh
 git clone https://github.com/shakfu/pyalda.git
 cd pyalda
-uv sync
 make  # Build the libremidi extension
 ```
 
@@ -369,40 +390,9 @@ make test
 uv run pytest tests/ -v
 ```
 
-### Project Architecture
+### Architecture
 
-![pyalda architecture](docs/assets/architecture.svg)
-
-### Project Structure
-
-```sh
-src/pyalda/
-  __init__.py       # Public API
-  __main__.py       # python -m pyalda support
-  cli.py            # Command-line interface
-  repl.py           # Interactive REPL
-  tokens.py         # Token types
-  scanner.py        # Lexer
-  ast_nodes.py      # AST node classes
-  parser.py         # Recursive descent parser
-  errors.py         # Error types
-  _libremidi.cpp    # nanobind bindings for libremidi
-  ext/              # Vendored prompt-toolkit
-  midi/
-    __init__.py
-    types.py        # MIDI data types
-    generator.py    # AST to MIDI conversion
-    smf.py          # Pure Python MIDI file writer
-    backends/
-      base.py       # Abstract backend
-      libremidi_backend.py
-
-docs/               # Documentation and architecture diagrams
-examples/           # Example Alda files
-scripts/            # Helper scripts (FluidSynth setup)
-tests/              # Test suite
-thirdparty/         # libremidi source
-```
+![pyalda architecture](https://raw.githubusercontent.com/shakfu/pyalda/main/docs/assets/architecture.svg)
 
 ## License
 
@@ -410,6 +400,8 @@ MIT
 
 ## See Also
 
-- [Alda](https://alda.io) - The original Alda language and implementation
+- [Alda](https://alda.io) - The original Alda language and reference implementation
 - [Alda Cheat Sheet](https://alda.io/cheat-sheet/) - Syntax reference
-- [Extending pyalda](docs/extending-pyalda.md) - Design document for programmatic API
+- [Extending pyalda](https://github.com/shakfu/pyalda/blob/main/docs/extending-pyalda.md) - Design document for programmatic API
+- [libremidi](https://github.com/celtera/libremidi) - A modern C++ MIDI 1 / MIDI 2 real-time & file I/O library. Supports Windows, macOS, Linux and WebMIDI.
+- [nanobind](https://github.com/wjakob/nanobind) - a tiny and efficient C++/Python bindings
