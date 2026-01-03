@@ -50,23 +50,6 @@ from .scanner import Scanner
 from .score import Score
 from .tokens import SourcePosition, Token, TokenType
 
-# Optional C parser bindings (faster parsing)
-try:
-    from ._alda_parser import ASTNode as CParserASTNode
-    from ._alda_parser import Token as CParserToken
-    from ._alda_parser import get_version as c_parser_version
-    from ._alda_parser import parse as c_parse
-    from ._alda_parser import scan as c_scan
-
-    HAS_C_PARSER = True
-except ImportError:
-    HAS_C_PARSER = False
-    CParserASTNode = None
-    CParserToken = None
-    c_parse = None
-    c_scan = None
-    c_parser_version = None
-
 __version__ = "0.1.4"
 
 
@@ -133,11 +116,4 @@ __all__ = [
     "generate_midi",
     "MidiBackend",
     "LibremidiBackend",
-    # C parser (optional)
-    "HAS_C_PARSER",
-    "c_parse",
-    "c_scan",
-    "CParserASTNode",
-    "CParserToken",
-    "c_parser_version",
 ]

@@ -57,9 +57,6 @@ find_package(Python 3.8
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/nanobind)
 
-# alda-parser C library
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/alda-parser)
-
 # libremidi configuration
 set(LIBREMIDI_HEADER_ONLY ON)
 set(LIBREMIDI_NO_BOOST ON)
