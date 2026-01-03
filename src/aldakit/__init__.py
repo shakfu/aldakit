@@ -1,20 +1,49 @@
 """aldakit: a pythonic alda music programming language implementation."""
 
 from .api import list_ports, play, play_file, save, save_file
-from .ast_nodes import (ASTNode, ASTVisitor, AtMarkerNode,  # Phase 2 nodes
-                        BarlineNode, BracketedSequenceNode, ChordNode,
-                        CramNode, DurationNode, EventSequenceNode,
-                        LispListNode, LispNumberNode, LispStringNode,
-                        LispSymbolNode, MarkerNode, NoteLengthMsNode,
-                        NoteLengthNode, NoteLengthSecondsNode, NoteNode,
-                        OctaveDownNode, OctaveSetNode, OctaveUpNode,
-                        OnRepetitionsNode, PartDeclarationNode, PartNode,
-                        RepeatNode, RepetitionRange, RestNode, RootNode,
-                        VariableDefinitionNode, VariableReferenceNode,
-                        VoiceGroupNode, VoiceNode)
+from .ast_nodes import (
+    ASTNode,
+    ASTVisitor,
+    AtMarkerNode,  # Phase 2 nodes
+    BarlineNode,
+    BracketedSequenceNode,
+    ChordNode,
+    CramNode,
+    DurationNode,
+    EventSequenceNode,
+    LispListNode,
+    LispNumberNode,
+    LispStringNode,
+    LispSymbolNode,
+    MarkerNode,
+    NoteLengthMsNode,
+    NoteLengthNode,
+    NoteLengthSecondsNode,
+    NoteNode,
+    OctaveDownNode,
+    OctaveSetNode,
+    OctaveUpNode,
+    OnRepetitionsNode,
+    PartDeclarationNode,
+    PartNode,
+    RepeatNode,
+    RepetitionRange,
+    RestNode,
+    RootNode,
+    VariableDefinitionNode,
+    VariableReferenceNode,
+    VoiceGroupNode,
+    VoiceNode,
+)
 from .errors import AldaParseError, AldaScanError, AldaSyntaxError
-from .midi import (LibremidiBackend, MidiBackend, MidiGenerator, MidiNote,
-                   MidiSequence, generate_midi)
+from .midi import (
+    LibremidiBackend,
+    MidiBackend,
+    MidiGenerator,
+    MidiNote,
+    MidiSequence,
+    generate_midi,
+)
 from .midi.transcriber import list_input_ports, transcribe
 from .parser import Parser, parse
 from .scanner import Scanner

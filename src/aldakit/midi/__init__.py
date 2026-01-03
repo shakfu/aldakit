@@ -2,9 +2,16 @@
 
 from .backends import LibremidiBackend, MidiBackend
 from .generator import MidiGenerator, generate_midi
-from .types import (INSTRUMENT_PROGRAMS, GeneralMidiProgram, MidiControlChange,
-                    MidiNote, MidiProgramChange, MidiSequence, MidiTempoChange,
-                    note_to_midi)
+from .types import (
+    INSTRUMENT_PROGRAMS,
+    GeneralMidiProgram,
+    MidiControlChange,
+    MidiNote,
+    MidiProgramChange,
+    MidiSequence,
+    MidiTempoChange,
+    note_to_midi,
+)
 
 __all__ = [
     # Types

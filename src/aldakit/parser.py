@@ -2,17 +2,39 @@
 
 from typing import NoReturn
 
-from .ast_nodes import (ASTNode, AtMarkerNode, BarlineNode,  # Phase 2 nodes
-                        BracketedSequenceNode, ChordNode, CramNode,
-                        DurationNode, EventSequenceNode, LispListNode,
-                        LispNumberNode, LispStringNode, LispSymbolNode,
-                        MarkerNode, NoteLengthMsNode, NoteLengthNode,
-                        NoteLengthSecondsNode, NoteNode, OctaveDownNode,
-                        OctaveSetNode, OctaveUpNode, OnRepetitionsNode,
-                        PartDeclarationNode, PartNode, RepeatNode,
-                        RepetitionRange, RestNode, RootNode,
-                        VariableDefinitionNode, VariableReferenceNode,
-                        VoiceGroupNode, VoiceNode)
+from .ast_nodes import (
+    ASTNode,
+    AtMarkerNode,
+    BarlineNode,  # Phase 2 nodes
+    BracketedSequenceNode,
+    ChordNode,
+    CramNode,
+    DurationNode,
+    EventSequenceNode,
+    LispListNode,
+    LispNumberNode,
+    LispStringNode,
+    LispSymbolNode,
+    MarkerNode,
+    NoteLengthMsNode,
+    NoteLengthNode,
+    NoteLengthSecondsNode,
+    NoteNode,
+    OctaveDownNode,
+    OctaveSetNode,
+    OctaveUpNode,
+    OnRepetitionsNode,
+    PartDeclarationNode,
+    PartNode,
+    RepeatNode,
+    RepetitionRange,
+    RestNode,
+    RootNode,
+    VariableDefinitionNode,
+    VariableReferenceNode,
+    VoiceGroupNode,
+    VoiceNode,
+)
 from .errors import AldaSyntaxError
 from .scanner import Scanner
 from .tokens import SourcePosition, Token, TokenType

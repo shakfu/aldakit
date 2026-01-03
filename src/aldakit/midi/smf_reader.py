@@ -6,8 +6,13 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .types import (MidiControlChange, MidiNote, MidiProgramChange,
-                    MidiSequence, MidiTempoChange)
+from .types import (
+    MidiControlChange,
+    MidiNote,
+    MidiProgramChange,
+    MidiSequence,
+    MidiTempoChange,
+)
 
 
 class MidiParseError(Exception):

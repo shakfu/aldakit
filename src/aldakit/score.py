@@ -25,10 +25,20 @@ _MODE_MIDI = "midi"
 
 def _ast_to_alda(ast: RootNode) -> str:
     """Convert an AST back to Alda source code."""
-    from .ast_nodes import (ChordNode, DurationNode, LispListNode,
-                            LispNumberNode, LispSymbolNode, NoteLengthNode,
-                            NoteNode, OctaveDownNode, OctaveSetNode,
-                            OctaveUpNode, PartDeclarationNode, RestNode)
+    from .ast_nodes import (
+        ChordNode,
+        DurationNode,
+        LispListNode,
+        LispNumberNode,
+        LispSymbolNode,
+        NoteLengthNode,
+        NoteNode,
+        OctaveDownNode,
+        OctaveSetNode,
+        OctaveUpNode,
+        PartDeclarationNode,
+        RestNode,
+    )
 
     def duration_to_str(d: DurationNode | None) -> str:
         if d is None:

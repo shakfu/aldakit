@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..ast_nodes import (ChordNode, DurationNode, EventSequenceNode,
-                         LispListNode, LispNumberNode, LispSymbolNode,
-                         NoteLengthNode, NoteNode, OctaveSetNode,
-                         PartDeclarationNode, RestNode, RootNode)
+from ..ast_nodes import (
+    ChordNode,
+    DurationNode,
+    EventSequenceNode,
+    LispListNode,
+    LispNumberNode,
+    LispSymbolNode,
+    NoteLengthNode,
+    NoteNode,
+    OctaveSetNode,
+    PartDeclarationNode,
+    RestNode,
+    RootNode,
+)
 from .types import INSTRUMENT_PROGRAMS, MidiNote, MidiSequence
 
 # MIDI pitch to note letter and accidental

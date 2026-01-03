@@ -10,11 +10,24 @@ from .base import ComposeElement
 if TYPE_CHECKING:
     pass
 
-from ..ast_nodes import (AtMarkerNode, ChordNode, CramNode, DurationNode,
-                         EventSequenceNode, MarkerNode, NoteLengthMsNode,
-                         NoteLengthNode, NoteLengthSecondsNode, NoteNode,
-                         RepeatNode, RestNode, VariableDefinitionNode,
-                         VariableReferenceNode, VoiceGroupNode, VoiceNode)
+from ..ast_nodes import (
+    AtMarkerNode,
+    ChordNode,
+    CramNode,
+    DurationNode,
+    EventSequenceNode,
+    MarkerNode,
+    NoteLengthMsNode,
+    NoteLengthNode,
+    NoteLengthSecondsNode,
+    NoteNode,
+    RepeatNode,
+    RestNode,
+    VariableDefinitionNode,
+    VariableReferenceNode,
+    VoiceGroupNode,
+    VoiceNode,
+)
 
 # Pitch to semitone offset from C
 _PITCH_OFFSETS = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}

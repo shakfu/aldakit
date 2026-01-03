@@ -6,8 +6,11 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
-from .._libremidi import (MidiIn, MidiMessage,  # type: ignore[import-untyped]
-                          Observer)
+from .._libremidi import (  # type: ignore[import-not-found]
+    MidiIn,
+    MidiMessage,
+    Observer,
+)
 from ..compose.attributes import Tempo
 from ..compose.core import Note, Rest, Seq
 from ..compose.part import Part

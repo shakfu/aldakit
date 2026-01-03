@@ -48,6 +48,77 @@ def create_parser() -> argparse.ArgumentParser:
         help="List available MIDI output ports",
     )
 
+    # input-ports subcommand
+    subparsers.add_parser(
+        "input-ports",
+        help="List available MIDI input ports",
+    )
+
+    # transcribe subcommand
+    transcribe_parser = subparsers.add_parser(
+        "transcribe",
+        help="Record MIDI input and output Alda code",
+    )
+    transcribe_parser.add_argument(
+        "-d",
+        "--duration",
+        type=float,
+        default=10.0,
+        metavar="SECONDS",
+        help="Recording duration in seconds (default: 10)",
+    )
+    transcribe_parser.add_argument(
+        "-i",
+        "--instrument",
+        default="piano",
+        metavar="NAME",
+        help="Instrument name (default: piano)",
+    )
+    transcribe_parser.add_argument(
+        "-t",
+        "--tempo",
+        type=float,
+        default=120.0,
+        metavar="BPM",
+        help="Tempo in BPM for quantization (default: 120)",
+    )
+    transcribe_parser.add_argument(
+        "-q",
+        "--quantize",
+        type=float,
+        default=0.25,
+        metavar="GRID",
+        help="Quantize grid in beats (default: 0.25 = 16th notes)",
+    )
+    transcribe_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        metavar="FILE",
+        help="Save to file (.alda or .mid)",
+    )
+    transcribe_parser.add_argument(
+        "--port",
+        metavar="NAME",
+        help="MIDI input port name",
+    )
+    transcribe_parser.add_argument(
+        "--play",
+        action="store_true",
+        help="Play back the recording after transcription",
+    )
+    transcribe_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show notes as they are played",
+    )
+    transcribe_parser.add_argument(
+        "--alda-notes",
+        action="store_true",
+        help="Show notes in Alda notation (requires -v)",
+    )
+
     # play subcommand (also the default)
     play_parser = subparsers.add_parser(
         "play",
@@ -129,6 +200,79 @@ def list_ports() -> None:
     else:
         print("No MIDI output ports available.")
         print("You may need to start a software synthesizer or connect a MIDI device.")
+
+
+def list_input_ports() -> None:
+    """List available MIDI input ports."""
+    from .midi.transcriber import list_input_ports as get_input_ports
+
+    ports = get_input_ports()
+
+    if ports:
+        print("Available MIDI input ports:")
+        for i, port in enumerate(ports):
+            print(f"  {i}: {port}")
+    else:
+        print("No MIDI input ports available.")
+        print("You may need to connect a MIDI keyboard or controller.")
+
+
+def transcribe_command(args: argparse.Namespace) -> int:
+    """Record MIDI input and output Alda code."""
+    from .midi.midi_to_ast import midi_pitch_to_note
+    from .midi.transcriber import transcribe
+
+    NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+    def on_note(pitch: int, velocity: int, is_on: bool) -> None:
+        if args.verbose:
+            if args.alda_notes:
+                letter, octave, accidentals = midi_pitch_to_note(pitch)
+                acc = "".join(accidentals)
+                note_str = f"o{octave} {letter}{acc}"
+                if is_on:
+                    print(f"  {note_str}", file=sys.stderr, flush=True)
+            else:
+                name = NOTE_NAMES[pitch % 12]
+                octave = (pitch // 12) - 1
+                if is_on:
+                    print(f"  Note ON:  {name}{octave} (vel={velocity})", file=sys.stderr, flush=True)
+                else:
+                    print(f"  Note OFF: {name}{octave}", file=sys.stderr, flush=True)
+
+    print(f"Recording for {args.duration} seconds... play some notes!", file=sys.stderr)
+    print(file=sys.stderr, flush=True)
+
+    try:
+        score = transcribe(
+            duration=args.duration,
+            port_name=args.port,
+            instrument=args.instrument,
+            quantize_grid=args.quantize,
+            tempo=args.tempo,
+            on_note=on_note if args.verbose else None,
+        )
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(file=sys.stderr, flush=True)
+    sys.stderr.flush()
+    alda_code = score.to_alda()
+
+    # Handle output
+    if args.output:
+        score.save(args.output)
+        print(f"Saved to {args.output}", file=sys.stderr)
+    else:
+        print(alda_code)
+
+    # Play back if requested
+    if args.play:
+        print("Playing back...", file=sys.stderr)
+        score.play()
+
+    return 0
 
 
 def stdin_mode(port_name: str | None, verbose: bool) -> int:
@@ -219,6 +363,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ports":
         list_ports()
         return 0
+
+    if args.command == "input-ports":
+        list_input_ports()
+        return 0
+
+    if args.command == "transcribe":
+        return transcribe_command(args)
 
     # Handle play subcommand or default behavior
     # Handle --stdin
