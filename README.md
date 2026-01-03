@@ -167,6 +167,40 @@ result = pipe(
 print(result.to_alda())
 ```
 
+### MIDI Transformers
+
+For post-MIDI-generation processing, use MIDI-level transformers that operate on absolute timing:
+
+```python
+from aldakit import Score
+from aldakit.midi.transform import (
+    quantize, humanize, swing, stretch,
+    accent, crescendo, normalize,
+    filter_notes, trim, merge,
+)
+
+# Get MIDI sequence from a score
+score = Score("piano: c d e f g a b > c")
+midi_seq = score.midi
+
+# Timing transformers
+quantized = quantize(midi_seq, grid=0.25, strength=0.8)  # Snap to quarter-note grid
+humanized = humanize(midi_seq, timing=0.02, velocity=10)  # Add subtle variations
+swung = swing(midi_seq, grid=0.5, amount=0.3)            # Apply swing feel
+
+# Velocity transformers
+accented = accent(midi_seq, pattern=[1.0, 0.5, 0.5, 0.5])  # 4/4 accent pattern
+crescendo_seq = crescendo(midi_seq, start_vel=50, end_vel=100)
+normalized = normalize(midi_seq, target=100)
+
+# Filtering and combining
+filtered = filter_notes(midi_seq, lambda n: n.pitch >= 60)  # Keep notes >= middle C
+trimmed = trim(midi_seq, start=0.0, end=2.0)               # First 2 seconds
+merged = merge(midi_seq, another_seq)                       # Combine sequences
+```
+
+Note: MIDI transformers operate on absolute timing (seconds) and cannot be converted back to Alda notation.
+
 ## CLI Reference
 
 ```sh

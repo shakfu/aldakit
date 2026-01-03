@@ -81,6 +81,30 @@ AST-level transformers for musical sequences (can be exported back to Alda):
   - `pipe(seq, *transforms)` - chain multiple transformations
   - `identity(seq)` - return sequence unchanged (placeholder)
 
+#### MIDI Transform Module (`aldakit.midi.transform`)
+
+MIDI-level transformers for post-MIDI-generation processing (operates on absolute timing, cannot be reversed to Alda):
+
+- **Timing transformers:**
+  - `quantize(seq, grid, strength)` - snap note start times to a grid
+  - `humanize(seq, timing, velocity, duration, seed)` - add random variations
+  - `swing(seq, grid, amount)` - apply swing feel to offbeat notes
+  - `stretch(seq, factor)` - scale all timings by a factor
+  - `shift(seq, seconds)` - shift all notes forward/backward in time
+- **Velocity transformers:**
+  - `accent(seq, pattern, amount, base_velocity)` - apply accent pattern
+  - `crescendo(seq, start_vel, end_vel, start_time, end_time)` - gradual velocity increase
+  - `diminuendo(seq, start_vel, end_vel, start_time, end_time)` - gradual velocity decrease
+  - `normalize(seq, target)` - scale velocities to target maximum
+  - `velocity_curve(seq, func)` - apply custom velocity transformation
+  - `compress(seq, threshold, ratio)` - compress dynamic range
+- **Filtering:**
+  - `filter_notes(seq, predicate)` - keep notes matching a condition
+  - `trim(seq, start, end)` - extract a time range
+- **Combining:**
+  - `merge(*seqs)` - combine multiple sequences into one
+  - `concatenate(*seqs, gap)` - append sequences end-to-end
+
 ## [0.1.3]
 
 ### Changed
