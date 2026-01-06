@@ -519,8 +519,10 @@ class TestScoreFromElements:
     def test_multiple_parts_generate_multiple_partnodes(self):
         """Regression: multiple parts should each get their own PartNode."""
         score = Score.from_elements(
-            part("piano"), note("c"),
-            part("violin"), note("d"),
+            part("piano"),
+            note("c"),
+            part("violin"),
+            note("d"),
         )
         ast = score.ast
         part_nodes = [c for c in ast.children if isinstance(c, PartNode)]
@@ -540,8 +542,12 @@ class TestScoreFromElements:
     def test_to_alda_preserves_part_structure(self):
         """Regression: to_alda() must render PartNode with declaration + events."""
         score = Score.from_elements(
-            part("violin"), note("c"), note("d"),
-            part("piano"), note("e"), note("f"),
+            part("violin"),
+            note("c"),
+            note("d"),
+            part("piano"),
+            note("e"),
+            note("f"),
         )
         alda = score.to_alda()
         # Both parts should be present in output

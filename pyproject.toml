@@ -11,7 +11,7 @@ authors = [
 ]
 keywords = ["alda", "midi", "music", "parser", "composition", "audio"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "Operating System :: MacOS",

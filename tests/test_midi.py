@@ -327,7 +327,7 @@ class TestTempoMap:
         seq = MidiSequence(
             tempo_changes=[
                 MidiTempoChange(bpm=120.0, time=0.0),  # 120 BPM for first 2 sec
-                MidiTempoChange(bpm=60.0, time=2.0),   # 60 BPM after
+                MidiTempoChange(bpm=60.0, time=2.0),  # 60 BPM after
             ],
             ticks_per_beat=480,
         )

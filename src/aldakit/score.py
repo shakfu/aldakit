@@ -348,9 +348,7 @@ class Score:
                 current_events = []
             elif current_events:
                 # No part declaration - bare event sequence
-                children.append(
-                    EventSequenceNode(events=current_events, position=None)
-                )
+                children.append(EventSequenceNode(events=current_events, position=None))
                 current_events = []
 
         for element in self._elements:
