@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6]
+
 ### Fixed
+
+- **Vendored prompt_toolkit imports in REPL now use sys.path approach correctly**
+  - `repl.py` now imports `ext` first to initialize sys.path, then uses absolute imports for prompt_toolkit.
+  - Previously, relative imports (`.ext.prompt_toolkit`) bypassed the sys.path setup needed for vendored packages.
+
+- **Test assertions now use explicit `assert` statements**
+  - Converted mock assertion methods (e.g., `mock.assert_called_once()`) to explicit `assert` statements in test_api.py and test_midi_import.py.
+  - Fixes pytest-review warnings about tests with no assertions.
 
 - **Compose API part declarations now generate correct AST structure**
   - `Score.from_elements(part("violin"), note("c"))` now wraps declarations and events in `PartNode`, so instruments are properly honored during MIDI generation.

@@ -381,7 +381,7 @@ class TestScoreMidiImport:
             score = Score.from_midi_file(midi_path)
             score.play()
 
-            mock_instance.play.assert_called_once()
+            assert mock_instance.play.call_count == 1
 
     def test_save_imported_as_alda(self, tmp_path):
         """Save imported MIDI as Alda file."""

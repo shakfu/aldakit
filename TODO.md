@@ -2,13 +2,6 @@
 
 ## Future Features
 
-### Transcription Expressiveness
-
-- [x] Implemented real-time ties, swing/triplet/quintuplet quantization, and per-track tempo events.
-- [x] Surface tuplets and swing metadata back through the compose API so callers can tweak ratios post-recording.
-- [x] Teach the quantizer how to collapse tied tuplets into `{ ... }` cram expressions for denser notation.
-- [x] Extend chord transcription so block chords inherit ties/tuplets rather than reverting to the nearest straight duration.
-
 ### CLI & UX Enhancements
 
 Improve ergonomics for live workflows:

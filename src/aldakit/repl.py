@@ -3,6 +3,9 @@
 import time
 from pathlib import Path
 
+# Initialize vendored packages path (must be before prompt_toolkit imports)
+from . import ext  # noqa: F401
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
@@ -12,8 +15,6 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.styles import Style
 
-# Initialize vendored packages path
-from . import ext  # noqa: F401
 from .errors import AldaParseError
 from .midi.backends import LibremidiBackend
 from .midi.generator import generate_midi

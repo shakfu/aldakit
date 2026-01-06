@@ -1,6 +1,6 @@
 [project]
 name = "aldakit"
-version = "0.1.5"
+version = "0.1.6"
 description = "Python parser and MIDI generator for the Alda music programming language"
 readme = "README.md"
 license = "MIT"

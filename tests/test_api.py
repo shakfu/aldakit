@@ -87,8 +87,9 @@ class TestScore:
         score = Score("piano: c d e")
         score.play()
 
-        mock_backend_class.assert_called_once_with(port_name=None)
-        mock_backend.play.assert_called_once()
+        assert mock_backend_class.call_count == 1
+        assert mock_backend_class.call_args.kwargs == {"port_name": None}
+        assert mock_backend.play.call_count == 1
 
     @patch("aldakit.score.LibremidiBackend")
     def test_play_with_port(self, mock_backend_class):
@@ -101,7 +102,9 @@ class TestScore:
         score = Score("piano: c d e")
         score.play(port="TestPort")
 
-        mock_backend_class.assert_called_once_with(port_name="TestPort")
+        assert mock_backend_class.call_count == 1
+        assert mock_backend_class.call_args.kwargs == {"port_name": "TestPort"}
+        assert mock_backend.play.call_count == 1
 
     @patch("aldakit.score.write_midi_file")
     @patch("aldakit.score.LibremidiBackend")
@@ -126,8 +129,10 @@ class TestModuleFunctions:
 
         aldakit.play("piano: c d e")
 
-        mock_score_class.assert_called_once_with("piano: c d e")
-        mock_score.play.assert_called_once_with(port=None, wait=True)
+        assert mock_score_class.call_count == 1
+        assert mock_score_class.call_args.args == ("piano: c d e",)
+        assert mock_score.play.call_count == 1
+        assert mock_score.play.call_args.kwargs == {"port": None, "wait": True}
 
     @patch("aldakit.api.Score")
     def test_play_with_options(self, mock_score_class):
@@ -136,7 +141,8 @@ class TestModuleFunctions:
 
         aldakit.play("piano: c d e", port="TestPort", wait=False)
 
-        mock_score.play.assert_called_once_with(port="TestPort", wait=False)
+        assert mock_score.play.call_count == 1
+        assert mock_score.play.call_args.kwargs == {"port": "TestPort", "wait": False}
 
     @patch("aldakit.api.Score")
     def test_play_file(self, mock_score_class):
@@ -145,8 +151,9 @@ class TestModuleFunctions:
 
         aldakit.play_file("song.alda")
 
-        mock_score_class.from_file.assert_called_once()
-        mock_score.play.assert_called_once_with(port=None, wait=True)
+        assert mock_score_class.from_file.call_count == 1
+        assert mock_score.play.call_count == 1
+        assert mock_score.play.call_args.kwargs == {"port": None, "wait": True}
 
     @patch("aldakit.api.Score")
     def test_save(self, mock_score_class):
@@ -165,8 +172,9 @@ class TestModuleFunctions:
 
         aldakit.save_file("song.alda", "output.mid")
 
-        mock_score_class.from_file.assert_called_once()
-        mock_score.save.assert_called_once_with("output.mid")
+        assert mock_score_class.from_file.call_count == 1
+        assert mock_score.save.call_count == 1
+        assert mock_score.save.call_args.args == ("output.mid",)
 
     @patch("aldakit.api.LibremidiBackend")
     def test_list_ports(self, mock_backend_class):
