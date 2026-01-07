@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows build failure in `_tsf.cpp`** - Added `#define NOMINMAX` to prevent Windows SDK `min`/`max` macro conflicts with `std::min`/`std::max`
+- **Type checking errors in `tsf_backend.py` and `soundfont.py`**
+  - Fixed `callable` type hints to use `Callable[[int, int], None]` from `collections.abc`
+  - Added type ignore comments for native module imports
+  - Fixed dictionary value type inference with explicit `str()` casts
+- **Flaky `test_current_time_advances` test** - Replaced fixed sleep with polling loop to handle audio thread startup latency
+
 ## [0.1.7]
 
 ### Added
