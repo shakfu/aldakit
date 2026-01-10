@@ -175,7 +175,8 @@ class TestVolume:
     def test_dynamic_marking(self):
         ast = parse("(ff) c")
         seq = generate_midi(ast)
-        assert seq.notes[0].velocity == 100
+        # ff = 88 velocity (official Alda spec)
+        assert seq.notes[0].velocity == 88
 
 
 class TestParts:

@@ -579,12 +579,21 @@ class Parser:
             return LispStringNode(value=token.literal, position=token.position)
 
         if self._match(TokenType.QUOTE):
-            # Quoted expression: '(...)
+            # Quoted expression: '(...) or 'symbol
             quote_token = self.tokens[self._current - 1]
-            if not self._check(TokenType.LEFT_PAREN):
-                self._error("Expected '(' after quote")
-            quoted_list = self._parse_sexp()
-            return LispQuotedNode(value=quoted_list, position=quote_token.position)
+            if self._check(TokenType.LEFT_PAREN):
+                # Quoted list: '(g minor)
+                quoted_list = self._parse_sexp()
+                return LispQuotedNode(value=quoted_list, position=quote_token.position)
+            elif self._check(TokenType.NAME) or self._check(TokenType.SYMBOL):
+                # Quoted symbol: 'up, 'down
+                symbol_token = self._advance()
+                quoted_symbol = LispSymbolNode(
+                    name=symbol_token.lexeme, position=symbol_token.position
+                )
+                return LispQuotedNode(value=quoted_symbol, position=quote_token.position)
+            else:
+                self._error("Expected '(' or symbol after quote")
 
         if self._check(TokenType.LEFT_PAREN):
             return self._parse_sexp()

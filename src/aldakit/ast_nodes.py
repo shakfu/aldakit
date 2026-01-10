@@ -380,9 +380,9 @@ class LispStringNode(LispNode):
 
 @dataclass
 class LispQuotedNode(LispNode):
-    """A quoted Lisp expression (e.g., '(g minor))."""
+    """A quoted Lisp expression (e.g., '(g minor) or 'up)."""
 
-    value: "LispListNode"
+    value: "LispListNode | LispSymbolNode"
     position: SourcePosition | None = None
 
     def accept(self, visitor: ASTVisitor) -> object:

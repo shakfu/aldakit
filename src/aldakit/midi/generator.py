@@ -126,9 +126,9 @@ class PartState:
 
     octave: int = 4
     tempo: float = 120.0  # BPM
-    volume: int = 80  # 0-127
+    volume: int = 69  # 0-127, default mf (54% of 127)
     quantization: float = 0.9  # 0.0-1.0, affects note duration
-    default_duration: float = 0.25  # Duration in beats (quarter note)
+    default_duration: float = 1.0  # Duration in beats (quarter note = 1 beat)
     current_time: float = 0.0  # Current time in seconds
     channel: int = 0
     program: int = 0
@@ -144,7 +144,7 @@ class GeneratorState:
     variables: dict[str, EventSequenceNode] = field(default_factory=dict)
     markers: dict[str, float] = field(default_factory=dict)  # marker -> time in seconds
     parts: dict[str, PartState] = field(default_factory=dict)
-    current_part: str | None = None
+    current_parts: list[str] = field(default_factory=list)  # Active parts (multi-instrument support)
     next_channel: int = 0
     repetition_number: int = 1  # Current repetition when in a repeat loop
 
@@ -185,17 +185,23 @@ class MidiGenerator:
         return self.sequence
 
     def _get_part_state(self) -> PartState:
-        """Get the current part state, creating default if needed."""
-        if self.state.current_part is None:
+        """Get the current part state (first active part), creating default if needed."""
+        if not self.state.current_parts:
             # Create implicit part
-            self.state.current_part = "_default"
+            self.state.current_parts = ["_default"]
             self.state.parts["_default"] = PartState(
                 channel=self.state.next_channel,
                 program=0,
             )
             self.state.next_channel = min(15, self.state.next_channel + 1)
 
-        return self.state.parts[self.state.current_part]
+        return self.state.parts[self.state.current_parts[0]]
+
+    def _get_all_part_states(self) -> list[PartState]:
+        """Get all currently active part states."""
+        if not self.state.current_parts:
+            return [self._get_part_state()]
+        return [self.state.parts[name] for name in self.state.current_parts]
 
     def _process_node(self, node: ASTNode) -> None:
         """Process an AST node."""
@@ -210,11 +216,14 @@ class MidiGenerator:
         elif isinstance(node, ChordNode):
             self._process_chord(node)
         elif isinstance(node, OctaveSetNode):
-            self._get_part_state().octave = node.octave
+            for part in self._get_all_part_states():
+                part.octave = node.octave
         elif isinstance(node, OctaveUpNode):
-            self._get_part_state().octave += 1
+            for part in self._get_all_part_states():
+                part.octave += 1
         elif isinstance(node, OctaveDownNode):
-            self._get_part_state().octave -= 1
+            for part in self._get_all_part_states():
+                part.octave -= 1
         elif isinstance(node, BarlineNode):
             pass  # Barlines are purely visual
         elif isinstance(node, LispListNode):
@@ -244,40 +253,48 @@ class MidiGenerator:
         names = node.declaration.names
         alias = node.declaration.alias
 
-        # Use alias as part name if available, otherwise first instrument name
-        part_name = alias if alias else names[0]
+        # For multi-instrument parts (violin/viola/cello), create a part for each
+        # The alias applies to the group but each instrument gets its own channel
+        active_parts = []
 
-        # Create or get part state
-        if part_name not in self.state.parts:
-            # Determine MIDI program from instrument name
-            program = 0
-            for name in names:
+        for i, name in enumerate(names):
+            # Use alias+index for group naming, or just instrument name
+            if alias and len(names) > 1:
+                part_name = f"{alias}_{i}"
+            elif alias:
+                part_name = alias
+            else:
+                part_name = name
+
+            # Create or get part state
+            if part_name not in self.state.parts:
+                # Determine MIDI program from instrument name
                 normalized = name.lower().replace("_", "-")
-                if normalized in INSTRUMENT_PROGRAMS:
-                    program = INSTRUMENT_PROGRAMS[normalized]
-                    break
+                program = INSTRUMENT_PROGRAMS.get(normalized, 0)
 
-            channel = self.state.next_channel
-            self.state.next_channel = min(15, self.state.next_channel + 1)
+                channel = self.state.next_channel
+                self.state.next_channel = min(15, self.state.next_channel + 1)
 
-            self.state.parts[part_name] = PartState(
-                channel=channel,
-                program=program,
-                tempo=self.state.global_tempo,
-            )
-
-            # Add program change
-            self.sequence.program_changes.append(
-                MidiProgramChange(
-                    program=program,
-                    time=0.0,
+                self.state.parts[part_name] = PartState(
                     channel=channel,
+                    program=program,
+                    tempo=self.state.global_tempo,
                 )
-            )
 
-        self.state.current_part = part_name
+                # Add program change
+                self.sequence.program_changes.append(
+                    MidiProgramChange(
+                        program=program,
+                        time=0.0,
+                        channel=channel,
+                    )
+                )
 
-        # Process events
+            active_parts.append(part_name)
+
+        self.state.current_parts = active_parts
+
+        # Process events (will be applied to all active parts)
         self._process_event_sequence(node.events)
 
     def _process_event_sequence(self, node: EventSequenceNode) -> None:
@@ -295,74 +312,77 @@ class MidiGenerator:
         Returns:
             Duration of the note in seconds.
         """
-        part = self._get_part_state()
+        duration_secs = 0.0
 
-        # Determine accidentals: use explicit accidentals, or key signature, or none
-        accidentals = node.accidentals
-        if not accidentals:
-            # No explicit accidentals - check key signature
-            letter = node.letter.lower()
-            if letter in part.key_signature:
-                accidentals = [part.key_signature[letter]]
-        elif "_" in accidentals:
-            # Natural sign explicitly cancels key signature
-            accidentals = []
+        # Process note for each active part (multi-instrument support)
+        for part in self._get_all_part_states():
+            # Determine accidentals: use explicit accidentals, or key signature, or none
+            accidentals = node.accidentals
+            if not accidentals:
+                # No explicit accidentals - check key signature
+                letter = node.letter.lower()
+                if letter in part.key_signature:
+                    accidentals = [part.key_signature[letter]]
+            elif "_" in accidentals:
+                # Natural sign explicitly cancels key signature
+                accidentals = []
 
-        # Calculate MIDI note number
-        midi_note = note_to_midi(node.letter, part.octave, accidentals)
+            # Calculate MIDI note number
+            midi_note = note_to_midi(node.letter, part.octave, accidentals)
 
-        # Apply transposition
-        if part.transpose != 0:
-            midi_note = max(0, min(127, midi_note + part.transpose))
+            # Apply transposition
+            if part.transpose != 0:
+                midi_note = max(0, min(127, midi_note + part.transpose))
 
-        # Calculate duration
-        duration_beats = self._calculate_duration(node.duration, part)
-        duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
+            # Calculate duration
+            duration_beats = self._calculate_duration(node.duration, part)
+            duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
 
-        # Apply quantization (affects actual note length, not timing)
-        if node.slurred:
-            actual_duration = duration_secs  # Full duration for slurred notes
-        else:
-            actual_duration = duration_secs * part.quantization
+            # Apply quantization (affects actual note length, not timing)
+            if node.slurred:
+                actual_duration = duration_secs  # Full duration for slurred notes
+            else:
+                actual_duration = duration_secs * part.quantization
 
-        # Create MIDI note
-        midi_note_event = MidiNote(
-            pitch=midi_note,
-            velocity=part.volume,
-            start_time=part.current_time,
-            duration=actual_duration,
-            channel=part.channel,
-        )
-        self.sequence.notes.append(midi_note_event)
+            # Create MIDI note
+            midi_note_event = MidiNote(
+                pitch=midi_note,
+                velocity=part.volume,
+                start_time=part.current_time,
+                duration=actual_duration,
+                channel=part.channel,
+            )
+            self.sequence.notes.append(midi_note_event)
 
-        # Update default duration if specified
-        if node.duration is not None:
-            part.default_duration = duration_beats
+            # Update default duration if specified
+            if node.duration is not None:
+                part.default_duration = duration_beats
 
-        # Advance time (unless in chord)
-        if not is_chord:
-            part.current_time += duration_secs
+            # Advance time (unless in chord)
+            if not is_chord:
+                part.current_time += duration_secs
 
         return duration_secs
 
     def _process_rest(self, node: RestNode) -> None:
         """Process a rest."""
-        part = self._get_part_state()
+        # Process rest for each active part (multi-instrument support)
+        for part in self._get_all_part_states():
+            duration_beats = self._calculate_duration(node.duration, part)
+            duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
 
-        duration_beats = self._calculate_duration(node.duration, part)
-        duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
+            # Update default duration if specified
+            if node.duration is not None:
+                part.default_duration = duration_beats
 
-        # Update default duration if specified
-        if node.duration is not None:
-            part.default_duration = duration_beats
-
-        # Advance time
-        part.current_time += duration_secs
+            # Advance time
+            part.current_time += duration_secs
 
     def _process_chord(self, node: ChordNode) -> None:
         """Process a chord (simultaneous notes)."""
-        part = self._get_part_state()
-        start_time = part.current_time
+        # Save start times for all active parts
+        all_parts = self._get_all_part_states()
+        start_times = {id(p): p.current_time for p in all_parts}
         max_duration = 0.0
 
         for item in node.notes:
@@ -370,16 +390,20 @@ class MidiGenerator:
                 duration = self._process_note(item, is_chord=True)
                 max_duration = max(max_duration, duration)
             elif isinstance(item, OctaveSetNode):
-                part.octave = item.octave
+                for part in all_parts:
+                    part.octave = item.octave
             elif isinstance(item, OctaveUpNode):
-                part.octave += 1
+                for part in all_parts:
+                    part.octave += 1
             elif isinstance(item, OctaveDownNode):
-                part.octave -= 1
+                for part in all_parts:
+                    part.octave -= 1
             elif isinstance(item, LispListNode):
                 self._process_lisp_list(item)
 
-        # Advance time by the longest note
-        part.current_time = start_time + max_duration
+        # Advance time by the longest note for all parts
+        for part in all_parts:
+            part.current_time = start_times[id(part)] + max_duration
 
     def _process_lisp_list(self, node: LispListNode) -> None:
         """Process a Lisp S-expression (attribute setting)."""
@@ -394,7 +418,8 @@ class MidiGenerator:
         func_name = first.name.lower()
         args = node.elements[1:]
 
-        part = self._get_part_state()
+        # Get all active parts for multi-instrument support
+        all_parts = self._get_all_part_states()
 
         if func_name in ("tempo", "tempo!"):
             # Set tempo
@@ -406,22 +431,27 @@ class MidiGenerator:
                     for p in self.state.parts.values():
                         p.tempo = new_tempo
                 else:
-                    part.tempo = new_tempo
+                    for part in all_parts:
+                        part.tempo = new_tempo
                 self.sequence.tempo_changes.append(
-                    MidiTempoChange(bpm=new_tempo, time=part.current_time)
+                    MidiTempoChange(bpm=new_tempo, time=all_parts[0].current_time)
                 )
 
         elif func_name in ("vol", "volume", "vol!", "volume!"):
             # Set volume (0-100 -> 0-127)
             if args and isinstance(args[0], LispNumberNode):
                 vol = int(args[0].value)
-                part.volume = min(127, max(0, int(vol * 127 / 100)))
+                velocity = min(127, max(0, int(vol * 127 / 100)))
+                for part in all_parts:
+                    part.volume = velocity
 
         elif func_name in ("quant", "quantize", "quantization"):
             # Set quantization (0-100 -> 0.0-1.0)
             if args and isinstance(args[0], LispNumberNode):
                 quant = float(args[0].value)
-                part.quantization = max(0.0, min(1.0, quant / 100.0))
+                quantization = max(0.0, min(1.0, quant / 100.0))
+                for part in all_parts:
+                    part.quantization = quantization
 
         elif func_name == "panning":
             # Set panning (0-100 -> 0-127)
@@ -430,19 +460,42 @@ class MidiGenerator:
                 pan_value = min(127, max(0, int(pan * 127 / 100)))
                 from .types import MidiControlChange
 
-                self.sequence.control_changes.append(
-                    MidiControlChange(
-                        control=10,  # Pan control
-                        value=pan_value,
-                        time=part.current_time,
-                        channel=part.channel,
+                for part in all_parts:
+                    self.sequence.control_changes.append(
+                        MidiControlChange(
+                            control=10,  # Pan control
+                            value=pan_value,
+                            time=part.current_time,
+                            channel=part.channel,
+                        )
                     )
-                )
 
         elif func_name in ("octave", "octave!"):
-            # Set octave
-            if args and isinstance(args[0], LispNumberNode):
-                part.octave = int(args[0].value)
+            # Set octave - can be number or quoted symbol ('up, 'down)
+            if args:
+                if isinstance(args[0], LispNumberNode):
+                    octave = int(args[0].value)
+                    for part in all_parts:
+                        part.octave = octave
+                elif isinstance(args[0], LispQuotedNode):
+                    # Handle 'up and 'down
+                    if isinstance(args[0].value, LispSymbolNode):
+                        symbol = args[0].value.name.lower()
+                        if symbol == "up":
+                            for part in all_parts:
+                                part.octave += 1
+                        elif symbol == "down":
+                            for part in all_parts:
+                                part.octave -= 1
+                elif isinstance(args[0], LispSymbolNode):
+                    # Handle unquoted up/down (non-standard but convenient)
+                    symbol = args[0].name.lower()
+                    if symbol == "up":
+                        for part in all_parts:
+                            part.octave += 1
+                    elif symbol == "down":
+                        for part in all_parts:
+                            part.octave -= 1
 
         # Dynamic markings
         elif func_name in (
@@ -461,23 +514,27 @@ class MidiGenerator:
             "fffff",
             "ffffff",
         ):
+            # Official Alda dynamics: volume 0-100 maps to velocity 0-127
+            # velocity = volume * 127 / 100
             dynamics = {
-                "pppppp": 10,
-                "ppppp": 20,
-                "pppp": 30,
-                "ppp": 40,
-                "pp": 50,
-                "p": 60,
-                "mp": 70,
-                "mf": 80,
-                "f": 90,
-                "ff": 100,
-                "fff": 110,
-                "ffff": 115,
-                "fffff": 120,
-                "ffffff": 127,
+                "pppppp": 1,    # vol=1
+                "ppppp": 10,   # vol=8
+                "pppp": 20,    # vol=16
+                "ppp": 30,     # vol=24
+                "pp": 39,      # vol=31
+                "p": 50,       # vol=39
+                "mp": 58,      # vol=46
+                "mf": 69,      # vol=54
+                "f": 79,       # vol=62
+                "ff": 88,      # vol=69
+                "fff": 98,     # vol=77
+                "ffff": 108,   # vol=85
+                "fffff": 117,  # vol=92
+                "ffffff": 127, # vol=100
             }
-            part.volume = dynamics.get(func_name, 80)
+            velocity = dynamics.get(func_name, 69)
+            for part in all_parts:
+                part.volume = velocity
 
         elif func_name in ("key-sig", "key-signature", "key-sig!", "key-signature!"):
             # Set key signature
@@ -488,7 +545,8 @@ class MidiGenerator:
                     for p in self.state.parts.values():
                         p.key_signature = key_sig.copy()
                 else:
-                    part.key_signature = key_sig
+                    for part in all_parts:
+                        part.key_signature = key_sig.copy()
 
         elif func_name in ("transpose", "transpose!"):
             # Set transposition in semitones
@@ -499,7 +557,8 @@ class MidiGenerator:
                     for p in self.state.parts.values():
                         p.transpose = semitones
                 else:
-                    part.transpose = semitones
+                    for part in all_parts:
+                        part.transpose = semitones
 
     def _parse_key_signature(self, args: list) -> dict[str, str] | None:
         """Parse key signature from S-expression arguments.
@@ -675,27 +734,32 @@ class MidiGenerator:
     def _process_at_marker(self, node: AtMarkerNode) -> None:
         """Process a marker reference (jump to marker time)."""
         if node.name in self.state.markers:
-            part = self._get_part_state()
-            part.current_time = self.state.markers[node.name]
+            target_time = self.state.markers[node.name]
+            for part in self._get_all_part_states():
+                part.current_time = target_time
 
     def _process_voice_group(self, node: VoiceGroupNode) -> None:
         """Process a voice group."""
-        part = self._get_part_state()
-        start_time = part.current_time
-        max_end_time = start_time
+        all_parts = self._get_all_part_states()
+        start_times = {id(p): p.current_time for p in all_parts}
+        max_end_time = max(start_times.values())
 
         for voice in node.voices:
             # Reset to start time for each voice
-            part.current_time = start_time
+            for part in all_parts:
+                part.current_time = start_times[id(part)]
             self._process_event_sequence(voice.events)
-            max_end_time = max(max_end_time, part.current_time)
+            for part in all_parts:
+                max_end_time = max(max_end_time, part.current_time)
 
         # Advance to the end of the longest voice
-        part.current_time = max_end_time
+        for part in all_parts:
+            part.current_time = max_end_time
 
     def _process_cram(self, node: CramNode) -> None:
         """Process a cram expression."""
-        part = self._get_part_state()
+        all_parts = self._get_all_part_states()
+        part = all_parts[0]  # Use first part for duration calculation
 
         # Calculate the total duration for the cram
         if node.duration:
@@ -711,19 +775,24 @@ class MidiGenerator:
         if event_count == 0:
             return
 
-        # Save current state
-        start_time = part.current_time
-        saved_duration = part.default_duration
+        # Save current state for all parts
+        saved_states = {
+            id(p): (p.current_time, p.default_duration)
+            for p in all_parts
+        }
 
-        # Set a temporary duration for each event
-        part.default_duration = total_beats / event_count
+        # Set a temporary duration for each event in all parts
+        for p in all_parts:
+            p.default_duration = total_beats / event_count
 
         # Process events
         self._process_event_sequence(node.events)
 
-        # Restore state and set final time
-        part.default_duration = saved_duration
-        part.current_time = start_time + total_secs
+        # Restore state and set final time for all parts
+        for p in all_parts:
+            start_time, saved_duration = saved_states[id(p)]
+            p.default_duration = saved_duration
+            p.current_time = start_time + total_secs
 
     def _process_repeat(self, node: RepeatNode) -> None:
         """Process a repeat expression."""
