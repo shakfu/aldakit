@@ -50,7 +50,7 @@ from .scanner import Scanner
 from .score import Score
 from .tokens import SourcePosition, Token, TokenType
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 
 __all__ = [
