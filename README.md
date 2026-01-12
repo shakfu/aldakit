@@ -915,10 +915,26 @@ The audio backend requires a General MIDI SoundFont file. aldakit searches these
 
 **Option 1: Download manually**
 
-Download a SoundFont and place it in `~/Music/sf2/`:
-- [FluidR3_GM.sf2](https://archive.org/download/fluidr3-gm-gs/FluidR3_GM.sf2) (141 MB, high quality)
-- [TimGM6mb.sf2](https://archive.org/download/TimGM6mb/TimGM6mb.sf2) (5.8 MB, compact)
-- [GeneralUser_GS.sf2](https://archive.org/download/GeneralUserGS/GeneralUser_GS_1.471.sf2) (31 MB, balanced)
+Download a SoundFont and place it in a folder such as `~/Music/sf2/`:
+
+- [FluidR3_GM.sf2](https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2) (142 MB, high quality)
+- [GeneralUser-GS.sf2](https://musical-artifacts.com/artifacts/6789/GeneralUser-GS.sf2) (31 MB, balanced)
+- [TimGM6mb.sf2](https://musical-artifacts.com/artifacts/7293/TimGM6mb.sf2) (5.8 MB, compact)
+
+Suggest using a `sha256sum` (macOs or Linux) or similar to verify file integrity after download:
+
+```sh
+% sha256sum FluidR3_GM.sf2
+74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0  FluidR3_GM.sf2
+
+% sha256sum GeneralUser-GS.sf2
+c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce  GeneralUser-GS.sf2
+
+% sha256sum TimGM6mb.sf2
+82475b91a76de15cb28a104707d3247ba932e228bada3f47bba63c6b31aaf7a1  TimGM6mb.sf2
+```
+
+On Windows (PowerShell): `Get-FileHash -Algorithm SHA256`
 
 **Option 2: Auto-download**
 
