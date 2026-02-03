@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Path expansion tests now work cross-platform** - Fixed brittle `test_expands_tilde` test that failed on Windows due to path separator differences (`/` vs `\`). Tests now use `Path` objects for comparison instead of string matching.
+- **Added platform-specific path tests** - Unix-style path tests skip on Windows; new Windows-specific tests added for full coverage.
+- **Path expansion tests now skippable** - Set `SKIP_PATH_EXPANSION_TESTS=1` environment variable to skip all path expansion tests if needed.
+
 ## [0.1.10]
 
 ### Added

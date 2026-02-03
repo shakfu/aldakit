@@ -1,9 +1,11 @@
 """Tests for configuration file handling."""
 
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 
 from aldakit.config import (
     Config,
@@ -48,19 +50,58 @@ class TestConfig:
 class TestExpandPath:
     """Test path expansion."""
 
+    @pytest.mark.skipif(
+        os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
+        reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
+    )
     def test_expands_tilde(self):
         result = _expand_path("~/Music/sf2/test.sf2")
-        assert result.startswith(str(Path.home()))
-        assert result.endswith("Music/sf2/test.sf2")
+        # Use Path for cross-platform comparison (handles slash differences)
+        result_path = Path(result)
+        assert result_path.is_relative_to(Path.home())
+        assert result_path.parts[-3:] == ("Music", "sf2", "test.sf2")
 
+    @pytest.mark.skipif(
+        os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
+        reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
+    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-style paths on non-Windows")
     def test_expands_env_var(self):
         with patch.dict(os.environ, {"MY_PATH": "/custom/path"}):
             result = _expand_path("$MY_PATH/soundfont.sf2")
             assert result == "/custom/path/soundfont.sf2"
 
+    @pytest.mark.skipif(
+        os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
+        reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
+    )
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-style paths on non-Windows")
     def test_absolute_path_unchanged(self):
         result = _expand_path("/absolute/path/to/file.sf2")
         assert result == "/absolute/path/to/file.sf2"
+
+    @pytest.mark.skipif(
+        os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
+        reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
+    )
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-style paths only")
+    def test_expands_env_var_windows(self):
+        with patch.dict(os.environ, {"MY_PATH": "C:\\custom\\path"}):
+            result = _expand_path("$MY_PATH/soundfont.sf2")
+            result_path = Path(result)
+            assert result_path.parts[-1] == "soundfont.sf2"
+            assert "custom" in result_path.parts
+
+    @pytest.mark.skipif(
+        os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
+        reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
+    )
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-style paths only")
+    def test_absolute_path_unchanged_windows(self):
+        result = _expand_path("C:\\absolute\\path\\to\\file.sf2")
+        result_path = Path(result)
+        assert result_path.parts[-1] == "file.sf2"
+        assert result_path.is_absolute()
 
 
 class TestGetConfigPaths:
