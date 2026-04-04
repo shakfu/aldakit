@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Visitor-based AST dispatch** - Replaced `isinstance()`-based dispatch in `score.py` (`node_to_str()`) and `midi/generator.py` (`_process_node()`) with proper visitor pattern using `ASTVisitor` from `ast_nodes.py`
+  - `score.py`: New `_AldaStringVisitor` class handles AST-to-Alda string conversion via `visit_*` methods, replacing nested closures with `isinstance` chains and `hasattr` fallbacks
+  - `midi/generator.py`: `MidiGenerator` now extends `ASTVisitor`; the monolithic 20-branch `_process_node()` dispatch is replaced by individual `visit_*Node` methods with dynamic dispatch via `ASTVisitor.visit()`
+
 ### Fixed
 
 - **Path expansion tests now work cross-platform** - Fixed brittle `test_expands_tilde` test that failed on Windows due to path separator differences (`/` vs `\`). Tests now use `Path` objects for comparison instead of string matching.

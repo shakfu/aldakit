@@ -1,40 +1,19 @@
 # TODO
 
-## Future Features
+## Short-term
 
-### CLI & UX Enhancements
+- [x] **Visitor-based AST to Alda**: Replace `isinstance()`-based dispatch in `score.py:node_to_str()` and `midi/generator.py:_process_node()` with proper visitor pattern using `ASTVisitor` from `ast_nodes.py`.
+- [ ] **Error Messages**: Expand fix suggestions across all error paths. Some CLI errors already include hints (e.g. `aldakit ports`), but parser/scanner errors lack guidance.
+- [ ] **Documentation**: Add API documentation (Sphinx or MkDocs) on top of the existing markdown docs in `docs/`.
 
-Improve ergonomics for live workflows:
-- [x] Added regression tests that execute key CLI paths (stdin streaming, version flag) with mocked backends.
-- [ ] Provide `--monitor` and `--metronome` helpers when transcribing to keep performers on grid.
+## Medium-term
 
-### Conditional Full Bindings
+- [ ] **`--monitor` and `--metronome` CLI helpers**: Provide real-time grid tracking aids for live transcription workflows.
+- [ ] **Performance Profiling**: Profile MIDI generation for large scores; add benchmark scripts.
+- [ ] **Conditional Full Bindings**: Detect `boost` and `readerwriterqueue` in CMake and define `LIBREMIDI_FULL_BINDINGS` to conditionally compile richer polling/observer APIs in `_libremidi.cpp`. Keeps zero-dependency wheels lean while unlocking responsive MIDI I/O for contributors.
 
-The bundled `_libremidi` extension defaults to the minimal feature set. Add conditional build logic to detect optional dependencies and enable the richer polling/observer APIs when available:
+## Long-term
 
-- Check for `boost` and `readerwriterqueue` availability in CMake
-- On macOS: `brew install boost readerwriterqueue`
-- Define `LIBREMIDI_FULL_BINDINGS` preprocessor macro when deps found
-- Use `#ifdef` in `_libremidi.cpp` to conditionally compile full vs minimal bindings
-
-This keeps zero-dependency wheels lean, yet unlocks responsive MIDI I/O for contributors who install the optional toolchain.
-
-## Priorities
-
-### Short-term
-
-1. **Documentation**: Consider adding API documentation (Sphinx/MkDocs) beyond the README
-2. **Examples**: Add more example files demonstrating advanced features
-3. **Error Messages**: Some error messages could include suggestions for fixes
-
-### Medium-term
-
-1. **Visitor-based AST to Alda**: Replace hasattr-based conversion with proper visitor pattern
-2. **Plugin Architecture**: Consider exposing hooks for custom generators/transformers
-3. **Performance Profiling**: Profile MIDI generation for large scores
-
-### Long-term
-
-1. **MIDI 2.0**: libremidi supports MIDI 2.0; consider exposing these features
-2. [x] **Audio Output**: Direct audio rendering without external synthesizer via embedded TinySoundFont (`TsfBackend`, `-sf` and `-a` CLI flags)
-3. **IDE Integration**: Language server protocol (LSP) for editor support
+- [ ] **Plugin Architecture**: Expose hooks for custom generators/transformers.
+- [ ] **MIDI 2.0**: Expose libremidi's MIDI 2.0 / UMP features (currently only MIDI 1.0 is bound).
+- [ ] **IDE Integration**: Language server protocol (LSP) for editor support.

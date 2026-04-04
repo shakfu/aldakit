@@ -7,7 +7,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .ast_nodes import EventSequenceNode, PartNode, RootNode
+from .ast_nodes import ASTVisitor, EventSequenceNode, PartNode, RootNode
 from .midi.backends import LibremidiBackend
 from .midi.generator import generate_midi
 from .midi.smf import write_midi_file
@@ -24,96 +24,75 @@ _MODE_ELEMENTS = "elements"
 _MODE_MIDI = "midi"
 
 
-def _ast_to_alda(ast: RootNode) -> str:
-    """Convert an AST back to Alda source code."""
-    from .ast_nodes import (
-        ChordNode,
-        DurationNode,
-        LispListNode,
-        LispNumberNode,
-        LispSymbolNode,
-        NoteLengthNode,
-        NoteNode,
-        OctaveDownNode,
-        OctaveSetNode,
-        OctaveUpNode,
-        PartDeclarationNode,
-        PartNode as PartNodeType,
-        RestNode,
-    )
+class _AldaStringVisitor(ASTVisitor):
+    """Visitor that converts AST nodes to Alda source strings."""
 
-    def duration_to_str(d: DurationNode | None) -> str:
-        if d is None:
+    def _duration_to_str(self, node) -> str:
+        if node is None or not node.components:
             return ""
-        # DurationNode has components, typically NoteLengthNode
-        if not d.components:
-            return ""
-        comp = d.components[0]
-        if isinstance(comp, NoteLengthNode):
+        comp = node.components[0]
+        if hasattr(comp, "denominator"):
             result = str(int(comp.denominator))
             result += "." * comp.dots
             return result
         return ""
 
-    def node_to_str(node) -> str:
-        if isinstance(node, PartNodeType):
-            # PartNode wraps declaration + events
-            decl_str = node_to_str(node.declaration)
-            events_str = node_to_str(node.events)
-            return f"{decl_str} {events_str}"
+    def visit_RootNode(self, node) -> str:
+        return " ".join(self.visit(c) for c in node.children)
 
-        elif isinstance(node, PartDeclarationNode):
-            instruments = "/".join(node.names)
-            return f"\n{instruments}:\n"
+    def visit_PartNode(self, node) -> str:
+        return f"{self.visit(node.declaration)} {self.visit(node.events)}"
 
-        elif isinstance(node, NoteNode):
-            result = node.letter
-            result += "".join(node.accidentals)
-            result += duration_to_str(node.duration)
-            return result
+    def visit_PartDeclarationNode(self, node) -> str:
+        return f"\n{'/'.join(node.names)}:\n"
 
-        elif isinstance(node, RestNode):
-            result = "r"
-            result += duration_to_str(node.duration)
-            return result
+    def visit_EventSequenceNode(self, node) -> str:
+        return " ".join(self.visit(e) for e in node.events)
 
-        elif isinstance(node, ChordNode):
-            # Notes carry their own durations; ChordNode has no duration attr
-            notes = "/".join(node_to_str(n) for n in node.notes)
-            return notes
+    def visit_NoteNode(self, node) -> str:
+        return node.letter + "".join(node.accidentals) + self._duration_to_str(node.duration)
 
-        elif isinstance(node, LispListNode):
-            parts = []
-            for elem in node.elements:
-                if isinstance(elem, LispSymbolNode):
-                    parts.append(elem.name)
-                elif isinstance(elem, LispNumberNode):
-                    parts.append(str(elem.value))
-                else:
-                    parts.append(node_to_str(elem))
-            return "(" + " ".join(parts) + ")"
+    def visit_RestNode(self, node) -> str:
+        return "r" + self._duration_to_str(node.duration)
 
-        elif isinstance(node, OctaveSetNode):
-            return f"o{node.octave}"
+    def visit_ChordNode(self, node) -> str:
+        return "/".join(self.visit(n) for n in node.notes)
 
-        elif isinstance(node, OctaveUpNode):
-            return ">"
+    def visit_LispListNode(self, node) -> str:
+        return "(" + " ".join(self.visit(e) for e in node.elements) + ")"
 
-        elif isinstance(node, OctaveDownNode):
-            return "<"
+    def visit_LispSymbolNode(self, node) -> str:
+        return node.name
 
-        elif hasattr(node, "events"):
-            # EventSequenceNode
-            return " ".join(node_to_str(e) for e in node.events)
+    def visit_LispNumberNode(self, node) -> str:
+        return str(node.value)
 
-        elif hasattr(node, "children"):
-            # RootNode or similar container
-            return " ".join(node_to_str(c) for c in node.children)
+    def visit_LispStringNode(self, node) -> str:
+        return f'"{node.value}"'
 
-        else:
-            return ""
+    def visit_LispQuotedNode(self, node) -> str:
+        return f"'{self.visit(node.value)}"
 
-    result = node_to_str(ast)
+    def visit_OctaveSetNode(self, node) -> str:
+        return f"o{node.octave}"
+
+    def visit_OctaveUpNode(self, node) -> str:
+        return ">"
+
+    def visit_OctaveDownNode(self, node) -> str:
+        return "<"
+
+    def visit_BarlineNode(self, node) -> str:
+        return "|"
+
+    def generic_visit(self, node) -> str:
+        return ""
+
+
+def _ast_to_alda(ast: RootNode) -> str:
+    """Convert an AST back to Alda source code."""
+    visitor = _AldaStringVisitor()
+    result = visitor.visit(ast)
     # Clean up extra whitespace
     lines = [line.strip() for line in result.split("\n")]
     return "\n".join(line for line in lines if line)
