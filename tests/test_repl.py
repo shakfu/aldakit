@@ -1,7 +1,6 @@
 """Tests for REPL module components."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Initialize vendored packages path
 from aldakit import ext  # noqa: F401

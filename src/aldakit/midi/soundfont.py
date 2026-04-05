@@ -7,6 +7,7 @@ SoundFont files for use with the TinySoundFont backend.
 from __future__ import annotations
 
 import hashlib
+import builtins
 import os
 import shutil
 import tempfile
@@ -98,7 +99,7 @@ class SoundFontManager:
         """The catalog of available SoundFonts for download."""
         return self._catalog.copy()
 
-    def get_search_paths(self) -> list[Path]:
+    def get_search_paths(self) -> builtins.list[Path]:
         """Get the list of paths searched for SoundFont files.
 
         Returns:
@@ -184,7 +185,7 @@ class SoundFontManager:
 
         return None
 
-    def list(self) -> list[Path]:
+    def list(self) -> builtins.list[Path]:
         """List all SoundFont files found in common locations.
 
         Returns:
@@ -330,7 +331,7 @@ class SoundFontManager:
         print(f"Saved to: {path}")
         return path
 
-    def setup_all(self, force: bool = False) -> list[Path]:
+    def setup_all(self, force: bool = False) -> builtins.list[Path]:
         """Download all SoundFonts from the catalog with progress display.
 
         Downloads each SoundFont in the catalog, verifying SHA256 checksums.
@@ -356,19 +357,25 @@ class SoundFontManager:
                 downloaded_paths.append(target_path)
                 continue
 
-            print(f"[{idx}/{total_items}] Downloading {name} ({info.get('size_mb', '?')} MB)...")
+            print(
+                f"[{idx}/{total_items}] Downloading {name} ({info.get('size_mb', '?')} MB)..."
+            )
             print(f"  {info.get('description', '')}")
 
             if not info.get("sha256"):
                 print(f"  WARNING: No SHA256 checksum defined for {name}")
 
-            path = self.download(name, progress_callback=print_download_progress, force=force)
+            path = self.download(
+                name, progress_callback=print_download_progress, force=force
+            )
             print()  # Newline after progress
             print(f"  Saved to: {path}")
             print(f"  SHA256 verified: {info.get('sha256', 'N/A')[:16]}...")
             downloaded_paths.append(path)
 
-        print(f"\nDownloaded {len(downloaded_paths)} SoundFont(s) to {self._soundfont_dir}")
+        print(
+            f"\nDownloaded {len(downloaded_paths)} SoundFont(s) to {self._soundfont_dir}"
+        )
         return downloaded_paths
 
     def verify_checksums(self) -> dict[str, bool]:

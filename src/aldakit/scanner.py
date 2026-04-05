@@ -105,7 +105,10 @@ class Scanner:
             self._sexp_depth += 1
             self._add_token(TokenType.LEFT_PAREN)
         elif c == ")":
-            self._error("Unexpected ')' outside of S-expression")
+            self._error(
+                "Unexpected ')' outside of S-expression",
+                hint="Every ')' must have a matching '('. Example: (tempo 120)",
+            )
         elif c == "{":
             self._add_token(TokenType.CRAM_OPEN)
         elif c == "}":
@@ -145,7 +148,14 @@ class Scanner:
         elif self._is_identifier_start(c):
             self._scan_name()
         else:
-            self._error(f"Unexpected character: {c!r}")
+            hint = None
+            if c == ";":
+                hint = "Alda uses # for comments, not semicolons."
+            elif c == "&":
+                hint = "Use ~ for ties between notes. Example: c4~c4"
+            elif c == "!":
+                hint = "Use + for sharps, - for flats. Example: c+ d-"
+            self._error(f"Unexpected character: {c!r}", hint=hint)
 
     def _scan_lisp_token(self, c: str) -> None:
         """Scan a token in lisp (S-expression) mode."""
@@ -168,7 +178,10 @@ class Scanner:
         elif self._is_symbol_char(c):
             self._scan_symbol()
         else:
-            self._error(f"Unexpected character in S-expression: {c!r}")
+            self._error(
+                f"Unexpected character in S-expression: {c!r}",
+                hint="S-expressions contain symbols, numbers, and strings. Example: (tempo 120)",
+            )
 
     def _scan_octave_set(self) -> None:
         """Scan octave set (o followed by digits)."""
@@ -202,7 +215,10 @@ class Scanner:
         lexeme = self.source[self._start : self._current]
         name = lexeme[1:]  # Skip the %
         if not name:
-            self._error("Expected marker name after '%'")
+            self._error(
+                "Expected marker name after '%'",
+                hint="Markers define sync points. Example: %verse",
+            )
         self._add_token(TokenType.MARKER, name)
 
     def _scan_at_marker(self) -> None:
@@ -212,7 +228,10 @@ class Scanner:
         lexeme = self.source[self._start : self._current]
         name = lexeme[1:]  # Skip the @
         if not name:
-            self._error("Expected marker name after '@'")
+            self._error(
+                "Expected marker name after '@'",
+                hint="Use @name to jump to a marker. Example: @verse",
+            )
         self._add_token(TokenType.AT_MARKER, name)
 
     def _scan_repeat(self) -> None:
@@ -221,8 +240,10 @@ class Scanner:
             self._advance()
         lexeme = self.source[self._start : self._current]
         if len(lexeme) == 1:
-            # Just *, no number - default to some value or error
-            self._error("Expected number after '*'")
+            self._error(
+                "Expected number after '*'",
+                hint="Repeat requires a count. Example: [c d e]*4",
+            )
         value = int(lexeme[1:])  # Skip the *
         self._add_token(TokenType.REPEAT, value)
 
@@ -235,7 +256,10 @@ class Scanner:
         lexeme = self.source[self._start : self._current]
         ranges_str = lexeme[1:]  # Skip the '
         if not ranges_str:
-            self._error("Expected repetition range after apostrophe")
+            self._error(
+                "Expected repetition range after apostrophe",
+                hint="On-repetitions select which repeats to play. Example: c'1,3 or c'1-3",
+            )
         self._add_token(TokenType.REPETITIONS, ranges_str)
 
     def _is_marker_char(self, c: str) -> bool:
@@ -280,13 +304,19 @@ class Scanner:
         """Scan a quoted alias string."""
         while self._peek() != '"' and not self._is_at_end():
             if self._peek() == "\n":
-                self._error("Unterminated alias string")
+                self._error(
+                    "Unterminated alias string",
+                    hint='Aliases must be on one line. Example: piano "my-piano":',
+                )
             if self._peek() == "\\":
                 self._advance()  # Skip escape char
             self._advance()
 
         if self._is_at_end():
-            self._error("Unterminated alias string")
+            self._error(
+                "Unterminated alias string",
+                hint='Add a closing quote. Example: piano "my-piano":',
+            )
 
         self._advance()  # Closing quote
         # Extract string content without quotes
@@ -304,7 +334,10 @@ class Scanner:
             self._advance()
 
         if self._is_at_end():
-            self._error("Unterminated string")
+            self._error(
+                "Unterminated string",
+                hint='Add a closing quote. Example: (key-sig "f+ c+ g+")',
+            )
 
         self._advance()  # Closing quote
         value = self.source[self._start + 1 : self._current - 1]
@@ -392,9 +425,10 @@ class Scanner:
             line_end = len(self.source)
         return self.source[self._line_start : line_end]
 
-    def _error(self, message: str) -> None:
+    def _error(self, message: str, hint: str | None = None) -> None:
         raise AldaScanError(
             message,
             self._make_position(),
             self._get_current_line(),
+            hint=hint,
         )

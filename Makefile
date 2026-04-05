@@ -5,8 +5,8 @@ endef
 
 
 .PHONY: all sync resync build test clean format lint typecheck check  \
-		reset publish publish-test assets fullcheck wheel release \
-		coverage test-review
+		reset publish publish-test assets qa wheel release \
+		coverage test-review docs docs-serve docs-deploy
 
 all: sync
 
@@ -49,16 +49,25 @@ lint:
 typecheck:
 	@uv run ty check src/aldakit/
 
+qa: lint typecheck format
+
 check:
 	@uv run twine check dist/*
-
-fullcheck: format lint typecheck test
 
 publish-test: check
 	@uv run twine upload --verbose --repository testpypi dist/*
 
 publish: check
 	@uv run twine upload dist/*
+
+docs:
+	@uv run mkdocs build
+
+docs-serve:
+	@uv run mkdocs serve
+
+docs-deploy:
+	@uv run mkdocs gh-deploy --force
 
 assets:
 	@mkdir -p docs/assets

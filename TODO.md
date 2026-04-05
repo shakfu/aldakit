@@ -3,8 +3,8 @@
 ## Short-term
 
 - [x] **Visitor-based AST to Alda**: Replace `isinstance()`-based dispatch in `score.py:node_to_str()` and `midi/generator.py:_process_node()` with proper visitor pattern using `ASTVisitor` from `ast_nodes.py`.
-- [ ] **Error Messages**: Expand fix suggestions across all error paths. Some CLI errors already include hints (e.g. `aldakit ports`), but parser/scanner errors lack guidance.
-- [ ] **Documentation**: Add API documentation (Sphinx or MkDocs) on top of the existing markdown docs in `docs/`.
+- [x] **Error Messages**: Expand fix suggestions across all error paths. Added `hint` field to `AldaParseError` and contextual hints to all scanner/parser/CLI error messages.
+- [x] **Documentation**: Set up MkDocs with Material theme. Removed stale internal docs, fixed broken links, added `docs`, `docs-serve`, `docs-deploy` Makefile targets.
 
 ## Medium-term
 

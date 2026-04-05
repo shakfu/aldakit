@@ -134,13 +134,19 @@ class Parser:
         names: list[str] = []
 
         # Parse first name
-        name_token = self._consume(TokenType.NAME, "Expected instrument name")
+        name_token = self._consume(
+            TokenType.NAME,
+            "Expected instrument name",
+            hint="Parts start with an instrument name. Example: piano: c d e",
+        )
         names.append(name_token.literal)
 
         # Parse additional names separated by /
         while self._match(TokenType.SEPARATOR):
             name_token = self._consume(
-                TokenType.NAME, "Expected instrument name after '/'"
+                TokenType.NAME,
+                "Expected instrument name after '/'",
+                hint="Multi-instrument parts use /. Example: violin/viola:",
             )
             names.append(name_token.literal)
 
@@ -150,7 +156,11 @@ class Parser:
             alias = self.tokens[self._current - 1].literal
 
         # Consume colon
-        self._consume(TokenType.COLON, "Expected ':' after part declaration")
+        self._consume(
+            TokenType.COLON,
+            "Expected ':' after part declaration",
+            hint="Part declarations end with a colon. Example: piano:",
+        )
 
         return PartDeclarationNode(names=names, alias=alias, position=position)
 
@@ -290,7 +300,11 @@ class Parser:
         name_token = self._consume(TokenType.NAME, "Expected variable name")
         name = name_token.literal
 
-        self._consume(TokenType.EQUALS, "Expected '=' after variable name")
+        self._consume(
+            TokenType.EQUALS,
+            "Expected '=' after variable name",
+            hint="Variable definitions use =. Example: myRiff = c d e",
+        )
 
         # Parse events on the same line or until newline
         events: list[ASTNode] = []
@@ -359,7 +373,11 @@ class Parser:
         # Parse events until closing brace
         events = self._parse_event_sequence_content(stop_tokens={TokenType.CRAM_CLOSE})
 
-        self._consume(TokenType.CRAM_CLOSE, "Expected '}'")
+        self._consume(
+            TokenType.CRAM_CLOSE,
+            "Expected '}'",
+            hint="Cram expressions need a closing brace. Example: {c d e}4",
+        )
 
         # Optional duration after the cram
         duration = self._try_parse_duration()
@@ -380,7 +398,11 @@ class Parser:
             stop_tokens={TokenType.EVENT_SEQ_CLOSE}
         )
 
-        self._consume(TokenType.EVENT_SEQ_CLOSE, "Expected ']'")
+        self._consume(
+            TokenType.EVENT_SEQ_CLOSE,
+            "Expected ']'",
+            hint="Bracketed sequences need a closing bracket. Example: [c d e]*4",
+        )
 
         return BracketedSequenceNode(
             events=EventSequenceNode(events=events, position=position),
@@ -547,12 +569,19 @@ class Parser:
                 denominator=denominator, dots=dots, position=token.position
             )
 
-        self._error("Expected duration component")
+        self._error(
+            "Expected duration component",
+            hint="Durations can be note lengths (4, 8, 16), milliseconds (500ms), or seconds (2s).",
+        )
 
     def _parse_sexp(self) -> LispListNode:
         """Parse an S-expression."""
         position = self._peek().position
-        self._consume(TokenType.LEFT_PAREN, "Expected '('")
+        self._consume(
+            TokenType.LEFT_PAREN,
+            "Expected '('",
+            hint="S-expressions start with '('. Example: (tempo 120)",
+        )
 
         elements = []
         while not self._check(TokenType.RIGHT_PAREN) and not self._is_at_end():
@@ -560,7 +589,11 @@ class Parser:
             if element:
                 elements.append(element)
 
-        self._consume(TokenType.RIGHT_PAREN, "Expected ')'")
+        self._consume(
+            TokenType.RIGHT_PAREN,
+            "Expected ')'",
+            hint="S-expressions need a closing ')'. Example: (tempo 120)",
+        )
 
         return LispListNode(elements=elements, position=position)
 
@@ -595,7 +628,10 @@ class Parser:
                     value=quoted_symbol, position=quote_token.position
                 )
             else:
-                self._error("Expected '(' or symbol after quote")
+                self._error(
+                    "Expected '(' or symbol after quote",
+                    hint="Quoted expressions use ' before a list or symbol. Example: '(g minor) or 'up",
+                )
 
         if self._check(TokenType.LEFT_PAREN):
             return self._parse_sexp()
@@ -631,18 +667,20 @@ class Parser:
             return True
         return False
 
-    def _consume(self, token_type: TokenType, message: str) -> Token:
+    def _consume(
+        self, token_type: TokenType, message: str, hint: str | None = None
+    ) -> Token:
         if self._check(token_type):
             return self._advance()
-        self._error(message)
+        self._error(message, hint=hint)
 
     def _skip_newlines(self) -> None:
         while self._match(TokenType.NEWLINE):
             pass
 
-    def _error(self, message: str) -> NoReturn:
+    def _error(self, message: str, hint: str | None = None) -> NoReturn:
         token = self._peek()
-        raise AldaSyntaxError(message, token.position)
+        raise AldaSyntaxError(message, token.position, hint=hint)
 
 
 def parse(source: str, filename: str = "<input>") -> RootNode:

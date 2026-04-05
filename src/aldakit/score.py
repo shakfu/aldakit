@@ -7,7 +7,26 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .ast_nodes import ASTVisitor, EventSequenceNode, PartNode, RootNode
+from .ast_nodes import (
+    ASTNode,
+    ASTVisitor,
+    BarlineNode,
+    ChordNode,
+    EventSequenceNode,
+    LispListNode,
+    LispNumberNode,
+    LispQuotedNode,
+    LispStringNode,
+    LispSymbolNode,
+    NoteNode,
+    OctaveDownNode,
+    OctaveSetNode,
+    OctaveUpNode,
+    PartDeclarationNode,
+    PartNode,
+    RestNode,
+    RootNode,
+)
 from .midi.backends import LibremidiBackend
 from .midi.generator import generate_midi
 from .midi.smf import write_midi_file
@@ -27,72 +46,80 @@ _MODE_MIDI = "midi"
 class _AldaStringVisitor(ASTVisitor):
     """Visitor that converts AST nodes to Alda source strings."""
 
-    def _duration_to_str(self, node) -> str:
-        if node is None or not node.components:
+    def _duration_to_str(self, node: object) -> str:
+        if node is None or not getattr(node, "components", None):
             return ""
-        comp = node.components[0]
+        comp = node.components[0]  # type: ignore[union-attr]
         if hasattr(comp, "denominator"):
             result = str(int(comp.denominator))
             result += "." * comp.dots
             return result
         return ""
 
-    def visit_RootNode(self, node) -> str:
-        return " ".join(self.visit(c) for c in node.children)
+    def _visit_str(self, node: ASTNode) -> str:
+        result = self.visit(node)
+        return str(result) if result is not None else ""
 
-    def visit_PartNode(self, node) -> str:
-        return f"{self.visit(node.declaration)} {self.visit(node.events)}"
+    def visit_RootNode(self, node: RootNode) -> str:
+        return " ".join(self._visit_str(c) for c in node.children)
 
-    def visit_PartDeclarationNode(self, node) -> str:
+    def visit_PartNode(self, node: PartNode) -> str:
+        return f"{self._visit_str(node.declaration)} {self._visit_str(node.events)}"
+
+    def visit_PartDeclarationNode(self, node: PartDeclarationNode) -> str:
         return f"\n{'/'.join(node.names)}:\n"
 
-    def visit_EventSequenceNode(self, node) -> str:
-        return " ".join(self.visit(e) for e in node.events)
+    def visit_EventSequenceNode(self, node: EventSequenceNode) -> str:
+        return " ".join(self._visit_str(e) for e in node.events)
 
-    def visit_NoteNode(self, node) -> str:
-        return node.letter + "".join(node.accidentals) + self._duration_to_str(node.duration)
+    def visit_NoteNode(self, node: NoteNode) -> str:
+        return (
+            node.letter
+            + "".join(node.accidentals)
+            + self._duration_to_str(node.duration)
+        )
 
-    def visit_RestNode(self, node) -> str:
+    def visit_RestNode(self, node: RestNode) -> str:
         return "r" + self._duration_to_str(node.duration)
 
-    def visit_ChordNode(self, node) -> str:
-        return "/".join(self.visit(n) for n in node.notes)
+    def visit_ChordNode(self, node: ChordNode) -> str:
+        return "/".join(self._visit_str(n) for n in node.notes)
 
-    def visit_LispListNode(self, node) -> str:
-        return "(" + " ".join(self.visit(e) for e in node.elements) + ")"
+    def visit_LispListNode(self, node: LispListNode) -> str:
+        return "(" + " ".join(self._visit_str(e) for e in node.elements) + ")"
 
-    def visit_LispSymbolNode(self, node) -> str:
+    def visit_LispSymbolNode(self, node: LispSymbolNode) -> str:
         return node.name
 
-    def visit_LispNumberNode(self, node) -> str:
+    def visit_LispNumberNode(self, node: LispNumberNode) -> str:
         return str(node.value)
 
-    def visit_LispStringNode(self, node) -> str:
+    def visit_LispStringNode(self, node: LispStringNode) -> str:
         return f'"{node.value}"'
 
-    def visit_LispQuotedNode(self, node) -> str:
-        return f"'{self.visit(node.value)}"
+    def visit_LispQuotedNode(self, node: LispQuotedNode) -> str:
+        return f"'{self._visit_str(node.value)}"
 
-    def visit_OctaveSetNode(self, node) -> str:
+    def visit_OctaveSetNode(self, node: OctaveSetNode) -> str:
         return f"o{node.octave}"
 
-    def visit_OctaveUpNode(self, node) -> str:
+    def visit_OctaveUpNode(self, node: OctaveUpNode) -> str:
         return ">"
 
-    def visit_OctaveDownNode(self, node) -> str:
+    def visit_OctaveDownNode(self, node: OctaveDownNode) -> str:
         return "<"
 
-    def visit_BarlineNode(self, node) -> str:
+    def visit_BarlineNode(self, node: BarlineNode) -> str:
         return "|"
 
-    def generic_visit(self, node) -> str:
-        return ""
+    def generic_visit(self, node: ASTNode) -> None:
+        return None
 
 
 def _ast_to_alda(ast: RootNode) -> str:
     """Convert an AST back to Alda source code."""
     visitor = _AldaStringVisitor()
-    result = visitor.visit(ast)
+    result = str(visitor.visit(ast) or "")
     # Clean up extra whitespace
     lines = [line.strip() for line in result.split("\n")]
     return "\n".join(line for line in lines if line)

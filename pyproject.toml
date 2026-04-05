@@ -1,6 +1,6 @@
 [project]
 name = "aldakit"
-version = "0.1.10"
+version = "0.1.11"
 description = "Python parser and MIDI generator for the Alda music programming language"
 readme = "README.md"
 license = "MIT"
@@ -35,6 +35,8 @@ Changelog = "https://github.com/shakfu/aldakit/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.6",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-review>=0.1.1",

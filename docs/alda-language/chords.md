@@ -1,6 +1,6 @@
 # Chords
 
-A **chord** is a collection of [notes](notes.md) which all start at the same [offset](offset.md), i.e. they all start at the exact same time. In Alda, a chord is expressed as notes with slashes in between them: `c/e/g`
+A **chord** is a collection of [notes](notes.md) which all start at the same offset, i.e. they all start at the exact same time. In Alda, a chord is expressed as notes with slashes in between them: `c/e/g`
 
 It's acceptable to have octave changes in between the notes of a chord, which allows for chords spanning multiple octaves: `c/g/>c/e/g`
 

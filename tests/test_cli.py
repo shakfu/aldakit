@@ -2,9 +2,7 @@
 
 import argparse
 import builtins
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,7 +14,6 @@ from aldakit.cli import (
     read_source,
     transcribe_command,
     main,
-    _add_play_arguments,
     _resolve_port_specifier,
     _resolve_output_port,
     _resolve_input_port,

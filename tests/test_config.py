@@ -65,7 +65,9 @@ class TestExpandPath:
         os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
         reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
     )
-    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-style paths on non-Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Unix-style paths on non-Windows"
+    )
     def test_expands_env_var(self):
         with patch.dict(os.environ, {"MY_PATH": "/custom/path"}):
             result = _expand_path("$MY_PATH/soundfont.sf2")
@@ -75,7 +77,9 @@ class TestExpandPath:
         os.environ.get("SKIP_PATH_EXPANSION_TESTS") == "1",
         reason="Path expansion tests skipped via SKIP_PATH_EXPANSION_TESTS",
     )
-    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-style paths on non-Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Unix-style paths on non-Windows"
+    )
     def test_absolute_path_unchanged(self):
         result = _expand_path("/absolute/path/to/file.sf2")
         assert result == "/absolute/path/to/file.sf2"

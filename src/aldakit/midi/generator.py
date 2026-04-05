@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 
 from ..ast_nodes import (
-    ASTNode,
     ASTVisitor,
     AtMarkerNode,
     BarlineNode,
