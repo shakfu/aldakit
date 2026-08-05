@@ -43,10 +43,18 @@ def config(**overrides) -> Config:
 
 
 def native(posix_path: str) -> str:
-    """Render a POSIX-style test path the way the platform would.
+    """Render a POSIX-style test path the way discovery would return it.
 
-    resolve_backend() returns ``str(Path(...))``, so on Windows the separators
-    are backslashes. Comparing against a hardcoded "/sf/found.sf2" fails there.
+    resolve_backend() treats the two sources of a SoundFont path differently:
+
+    - a *discovered* path comes from ``find_soundfont()`` and is returned as
+      ``str(Path(...))``, so its separators are platform-native (backslashes on
+      Windows);
+    - a path from ``-sf`` or the config file is passed through exactly as the
+      user wrote it.
+
+    Use this helper only for the discovered case; comparing a configured path
+    against it fails on Windows.
     """
     return str(Path(posix_path))
 
@@ -95,7 +103,8 @@ class TestNoMidiPorts:
         with Env(ports=[], discovered="/sf/found.sf2"):
             choice = resolve_backend(args(), config(soundfont="/sf/configured.sf2"), None)
         assert choice.use_audio
-        assert choice.soundfont == native("/sf/configured.sf2")
+        # A configured path is passed through verbatim, not normalised
+        assert choice.soundfont == "/sf/configured.sf2"
 
     def test_no_soundfont_falls_back_to_midi(self):
         """With nothing to synthesize with, the virtual port is all there is."""
@@ -159,6 +168,36 @@ class TestExplicitAudioRequest:
             choice = resolve_backend(args(audio=True), config(), None)
         assert choice.error is not None
         assert "_tsf module" in choice.error
+
+
+class TestPathNormalisation:
+    """Where a SoundFont path came from decides whether it is normalised.
+
+    This is invisible on POSIX, where both forms are the same string, and it
+    broke a Windows CI run when the two were conflated.
+    """
+
+    def test_discovered_paths_are_platform_native(self):
+        with Env(ports=[], discovered="/sf/found.sf2"):
+            choice = resolve_backend(args(), config(), None)
+        assert choice.soundfont == str(Path("/sf/found.sf2"))
+
+    def test_configured_paths_are_passed_through_verbatim(self):
+        with Env(ports=[], discovered=None):
+            choice = resolve_backend(args(), config(soundfont="/sf/as-written.sf2"), None)
+        assert choice.soundfont == "/sf/as-written.sf2"
+
+    def test_cli_paths_are_passed_through_verbatim(self):
+        with Env(ports=[], discovered=None):
+            choice = resolve_backend(args(soundfont="/sf/as-typed.sf2"), config(), None)
+        assert choice.soundfont == "/sf/as-typed.sf2"
+
+    def test_both_forms_load_the_same_file(self, tmp_path):
+        """The two spellings must still resolve to one file on disk."""
+        sf = tmp_path / "sound.sf2"
+        sf.write_bytes(b"stub")
+        as_posix = sf.as_posix()
+        assert Path(as_posix).resolve() == Path(str(sf)).resolve()
 
 
 class TestPrecedence:
