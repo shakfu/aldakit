@@ -257,7 +257,7 @@ class TestScoreFromElements:
 
     def test_from_parts(self):
         """Create score from parts."""
-        from aldakit.compose import Part, note
+        from aldakit.compose import Part
 
         p = Part("piano")
         score = Score.from_parts(p)
@@ -332,12 +332,7 @@ class TestScoreFromElements:
 
     def test_chained_builders(self):
         """Chain builder methods."""
-        score = (
-            Score.from_elements()
-            .with_part("piano")
-            .with_tempo(120)
-            .with_volume(80)
-        )
+        score = Score.from_elements().with_part("piano").with_tempo(120).with_volume(80)
 
         assert score.midi is not None
 

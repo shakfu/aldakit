@@ -29,7 +29,7 @@ This keeps zero-dependency wheels lean, yet unlocks responsive MIDI I/O for cont
 
 ### Medium-term
 
-1. **Visitor-based AST to Alda**: Replace hasattr-based conversion with proper visitor pattern
+1. [x] **Visitor-based AST to Alda**: `aldakit.serialize.AldaWriter` replaces the hasattr-based conversion
 2. **Plugin Architecture**: Consider exposing hooks for custom generators/transformers
 3. **Performance Profiling**: Profile MIDI generation for large scores
 

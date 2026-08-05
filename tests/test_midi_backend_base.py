@@ -98,6 +98,7 @@ class TestMidiBackendDefaults:
 
     def test_is_playing_default(self):
         """Default is_playing returns False."""
+
         # Test via base class method called from a subclass that doesn't override
         class MinimalBackend(MidiBackend):
             def play(self, sequence):
@@ -149,7 +150,9 @@ class TestMidiBackendDefaults:
     def test_wait_blocks_until_done(self):
         """wait() blocks until is_playing() returns False."""
         backend = TimedPlaybackBackend(play_duration=0.05)
-        seq = MidiSequence(notes=[], program_changes=[], control_changes=[], tempo_changes=[])
+        seq = MidiSequence(
+            notes=[], program_changes=[], control_changes=[], tempo_changes=[]
+        )
 
         backend.play(seq)
         assert backend.is_playing() is True
@@ -184,7 +187,9 @@ class TestConcreteBackend:
     def test_play_increments_count(self):
         """play() increments play count."""
         backend = ConcreteBackend()
-        seq = MidiSequence(notes=[], program_changes=[], control_changes=[], tempo_changes=[])
+        seq = MidiSequence(
+            notes=[], program_changes=[], control_changes=[], tempo_changes=[]
+        )
 
         backend.play(seq)
         assert backend._play_count == 1
@@ -195,7 +200,9 @@ class TestConcreteBackend:
     def test_play_returns_slot_id(self):
         """play() returns slot ID."""
         backend = ConcreteBackend()
-        seq = MidiSequence(notes=[], program_changes=[], control_changes=[], tempo_changes=[])
+        seq = MidiSequence(
+            notes=[], program_changes=[], control_changes=[], tempo_changes=[]
+        )
 
         slot_id = backend.play(seq)
         assert slot_id == 1
@@ -210,7 +217,9 @@ class TestConcreteBackend:
     def test_is_playing_reflects_state(self):
         """is_playing() reflects backend state."""
         backend = ConcreteBackend()
-        seq = MidiSequence(notes=[], program_changes=[], control_changes=[], tempo_changes=[])
+        seq = MidiSequence(
+            notes=[], program_changes=[], control_changes=[], tempo_changes=[]
+        )
 
         assert backend.is_playing() is False
 

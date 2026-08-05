@@ -184,7 +184,7 @@ class SoundFontManager:
 
         return None
 
-    def list(self) -> list[Path]:
+    def list_installed(self) -> list[Path]:
         """List all SoundFont files found in common locations.
 
         Returns:
@@ -356,19 +356,25 @@ class SoundFontManager:
                 downloaded_paths.append(target_path)
                 continue
 
-            print(f"[{idx}/{total_items}] Downloading {name} ({info.get('size_mb', '?')} MB)...")
+            print(
+                f"[{idx}/{total_items}] Downloading {name} ({info.get('size_mb', '?')} MB)..."
+            )
             print(f"  {info.get('description', '')}")
 
             if not info.get("sha256"):
                 print(f"  WARNING: No SHA256 checksum defined for {name}")
 
-            path = self.download(name, progress_callback=print_download_progress, force=force)
+            path = self.download(
+                name, progress_callback=print_download_progress, force=force
+            )
             print()  # Newline after progress
             print(f"  Saved to: {path}")
             print(f"  SHA256 verified: {info.get('sha256', 'N/A')[:16]}...")
             downloaded_paths.append(path)
 
-        print(f"\nDownloaded {len(downloaded_paths)} SoundFont(s) to {self._soundfont_dir}")
+        print(
+            f"\nDownloaded {len(downloaded_paths)} SoundFont(s) to {self._soundfont_dir}"
+        )
         return downloaded_paths
 
     def verify_checksums(self) -> dict[str, bool]:
@@ -436,6 +442,12 @@ class SoundFontManager:
         return sha256.hexdigest()
 
 
+# Deprecated alias for SoundFontManager.list_installed(). Attached after the
+# class body: binding the name ``list`` inside it would shadow the builtin for
+# every ``list[...]`` annotation in the class.
+SoundFontManager.list = SoundFontManager.list_installed  # type: ignore[attr-defined]
+
+
 # Default manager instance
 _default_manager = SoundFontManager()
 
@@ -464,7 +476,7 @@ def list_soundfonts() -> list[Path]:
     Returns:
         List of paths to SoundFont files.
     """
-    return _default_manager.list()
+    return _default_manager.list_installed()
 
 
 def list_available_downloads() -> dict[str, dict]:

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import time
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .ast_nodes import EventSequenceNode, PartNode, RootNode
+from .constants import POLL_INTERVAL_PLAYBACK
 from .midi.backends import LibremidiBackend
-from .midi.generator import generate_midi
+from .midi.generator import Diagnostic, MidiGenerator
 from .midi.smf import write_midi_file
 from .parser import parse
 
@@ -25,98 +25,72 @@ _MODE_MIDI = "midi"
 
 
 def _ast_to_alda(ast: RootNode) -> str:
-    """Convert an AST back to Alda source code."""
-    from .ast_nodes import (
-        ChordNode,
-        DurationNode,
-        LispListNode,
-        LispNumberNode,
-        LispSymbolNode,
-        NoteLengthNode,
-        NoteNode,
-        OctaveDownNode,
-        OctaveSetNode,
-        OctaveUpNode,
-        PartDeclarationNode,
-        PartNode as PartNodeType,
-        RestNode,
-    )
+    """Convert an AST back to Alda source code.
 
-    def duration_to_str(d: DurationNode | None) -> str:
-        if d is None:
-            return ""
-        # DurationNode has components, typically NoteLengthNode
-        if not d.components:
-            return ""
-        comp = d.components[0]
-        if isinstance(comp, NoteLengthNode):
-            result = str(int(comp.denominator))
-            result += "." * comp.dots
-            return result
-        return ""
+    Deprecated alias for :func:`aldakit.serialize.write_alda`, kept for
+    backwards compatibility.
+    """
+    from .serialize import write_alda
 
-    def node_to_str(node) -> str:
-        if isinstance(node, PartNodeType):
-            # PartNode wraps declaration + events
-            decl_str = node_to_str(node.declaration)
-            events_str = node_to_str(node.events)
-            return f"{decl_str} {events_str}"
+    return write_alda(ast)
 
-        elif isinstance(node, PartDeclarationNode):
-            instruments = "/".join(node.names)
-            return f"\n{instruments}:\n"
 
-        elif isinstance(node, NoteNode):
-            result = node.letter
-            result += "".join(node.accidentals)
-            result += duration_to_str(node.duration)
-            return result
+class PlaybackHandle:
+    """Controls playback that was started without waiting for it to finish.
 
-        elif isinstance(node, RestNode):
-            result = "r"
-            result += duration_to_str(node.duration)
-            return result
+    Returned by ``Score.play(wait=False)``. The handle owns the backend: the
+    MIDI port stays open and the playback threads keep running until you call
+    :meth:`stop` or :meth:`close`, or until the handle is used as a context
+    manager and the block exits.
 
-        elif isinstance(node, ChordNode):
-            # Notes carry their own durations; ChordNode has no duration attr
-            notes = "/".join(node_to_str(n) for n in node.notes)
-            return notes
+    Examples:
+        >>> handle = Score("piano: c1 d1 e1").play(wait=False)
+        >>> handle.is_playing()
+        True
+        >>> handle.stop()
+    """
 
-        elif isinstance(node, LispListNode):
-            parts = []
-            for elem in node.elements:
-                if isinstance(elem, LispSymbolNode):
-                    parts.append(elem.name)
-                elif isinstance(elem, LispNumberNode):
-                    parts.append(str(elem.value))
-                else:
-                    parts.append(node_to_str(elem))
-            return "(" + " ".join(parts) + ")"
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
+        self._closed = False
 
-        elif isinstance(node, OctaveSetNode):
-            return f"o{node.octave}"
+    @property
+    def backend(self) -> Any:
+        """The underlying MIDI or audio backend."""
+        return self._backend
 
-        elif isinstance(node, OctaveUpNode):
-            return ">"
+    def is_playing(self) -> bool:
+        """Whether playback is still in progress."""
+        if self._closed:
+            return False
+        return self._backend.is_playing()
 
-        elif isinstance(node, OctaveDownNode):
-            return "<"
+    def wait(self, poll_interval: float = POLL_INTERVAL_PLAYBACK) -> None:
+        """Block until playback finishes."""
+        if self._closed:
+            return
+        self._backend.wait(poll_interval)
 
-        elif hasattr(node, "events"):
-            # EventSequenceNode
-            return " ".join(node_to_str(e) for e in node.events)
+    def stop(self) -> None:
+        """Stop playback and release the backend."""
+        self.close()
 
-        elif hasattr(node, "children"):
-            # RootNode or similar container
-            return " ".join(node_to_str(c) for c in node.children)
-
+    def close(self) -> None:
+        """Stop playback and release the backend. Safe to call repeatedly."""
+        if self._closed:
+            return
+        self._closed = True
+        close = getattr(self._backend, "close", None)
+        if close is not None:
+            close()
         else:
-            return ""
+            self._backend.stop()
 
-    result = node_to_str(ast)
-    # Clean up extra whitespace
-    lines = [line.strip() for line in result.split("\n")]
-    return "\n".join(line for line in lines if line)
+    def __enter__(self) -> PlaybackHandle:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
 
 class Score:
@@ -167,6 +141,8 @@ class Score:
         self._filename = filename
         self._elements: list[ComposeElement] = []
         self._imported_ast: RootNode | None = None
+        self._diagnostics: list[Diagnostic] = []
+        self._playback: PlaybackHandle | None = None
 
     @classmethod
     def from_source(cls, source: str, filename: str = "<input>") -> Score:
@@ -251,6 +227,8 @@ class Score:
         score._filename = str(path)
         score._elements = []
         score._imported_ast = ast
+        score._diagnostics = []
+        score._playback = None
         return score
 
     @classmethod
@@ -279,6 +257,8 @@ class Score:
         score._filename = "<compose>"
         score._elements = list(elements)
         score._imported_ast = None
+        score._diagnostics = []
+        score._playback = None
         return score
 
     @classmethod
@@ -315,7 +295,26 @@ class Score:
     @cached_property
     def midi(self) -> MidiSequence:
         """The generated MIDI sequence (lazily computed and cached)."""
-        return generate_midi(self.ast)
+        generator = MidiGenerator()
+        sequence = generator.generate(self.ast)
+        self._diagnostics = list(generator.diagnostics)
+        return sequence
+
+    @property
+    def diagnostics(self) -> list[Diagnostic]:
+        """Non-fatal problems found while generating MIDI.
+
+        Includes unknown instrument names, undefined variable and marker
+        references, and MIDI channel exhaustion. Generating the MIDI sequence
+        is what produces them, so accessing this triggers generation.
+
+        Examples:
+            >>> score = Score("bogus-instrument: c d e")
+            >>> [str(d) for d in score.diagnostics]
+            ["<input>:1:1: Unknown instrument 'bogus-instrument'; falling back to acoustic grand piano."]
+        """
+        self.midi  # Ensure generation has happened
+        return self._diagnostics
 
     @property
     def duration(self) -> float:
@@ -326,8 +325,10 @@ class Score:
         """Build AST directly from compose elements."""
         from .ast_nodes import PartDeclarationNode
 
+        from .compose.base import OctaveContext
         from .compose.part import Part
 
+        octave_ctx = OctaveContext()
         children = []
         current_events: list = []
         current_part_decl: PartDeclarationNode | None = None
@@ -352,17 +353,20 @@ class Score:
                 current_events = []
 
         for element in self._elements:
-            ast_node = element.to_ast()
+            # to_events() threads octave state, so notes that declare an
+            # octave emit the octave change the AST needs to reproduce them.
+            ast_nodes = element.to_events(octave_ctx)
 
             if isinstance(element, Part):
                 # Flush previous part first
                 flush_part()
-                # Start new part - Part.to_ast() returns PartDeclarationNode
-                assert isinstance(ast_node, PartDeclarationNode)
-                current_part_decl = ast_node
+                # Start new part - Part.to_events() returns a PartDeclarationNode
+                assert len(ast_nodes) == 1
+                assert isinstance(ast_nodes[0], PartDeclarationNode)
+                current_part_decl = ast_nodes[0]
             else:
                 # Accumulate events
-                current_events.append(ast_node)
+                current_events.extend(ast_nodes)
 
         # Flush remaining content
         flush_part()
@@ -457,7 +461,25 @@ class Score:
             # Generate Alda from AST
             return _ast_to_alda(self.ast)
         else:
-            return " ".join(e.to_alda() for e in self._elements)
+            from .compose.base import OctaveContext
+
+            ctx = OctaveContext()
+            parts: list[str] = []
+            for element in self._elements:
+                parts.extend(element.to_alda_parts(ctx))
+            return " ".join(parts)
+
+    def _make_backend(self, backend: str, port: str | None, soundfont: str | None):
+        """Create the requested playback backend."""
+        if backend == "audio":
+            from .midi.backends import HAS_TSF, TsfBackend
+
+            if not HAS_TSF:
+                raise RuntimeError(
+                    "Audio backend not available. The _tsf module was not built."
+                )
+            return TsfBackend(soundfont=soundfont)
+        return LibremidiBackend(port_name=port)
 
     def play(
         self,
@@ -465,41 +487,56 @@ class Score:
         wait: bool = True,
         backend: str = "midi",
         soundfont: str | None = None,
-    ) -> None:
+    ) -> PlaybackHandle | None:
         """Play the score.
 
         Args:
             port: MIDI output port name (for backend="midi"). If None, uses
                 the first available port or creates a virtual port.
-            wait: If True (default), block until playback completes.
+            wait: If True (default), block until playback completes and release
+                the backend. If False, playback continues in the background and
+                a :class:`PlaybackHandle` is returned; the caller owns it and
+                should call ``stop()`` or ``close()`` when finished.
             backend: Backend to use: "midi" (default) or "audio".
                 - "midi": Send to MIDI port via libremidi (requires external synth)
                 - "audio": Direct audio output via TinySoundFont (requires SoundFont)
             soundfont: Path to SoundFont file (for backend="audio"). If None,
                 searches common locations or uses ALDAKIT_SOUNDFONT env var.
 
+        Returns:
+            None when ``wait`` is True, otherwise a :class:`PlaybackHandle`
+            controlling the background playback.
+
         Raises:
             RuntimeError: If the selected backend is not available.
             FileNotFoundError: If backend="audio" and no SoundFont is found.
-        """
-        if backend == "audio":
-            from .midi.backends import TsfBackend, HAS_TSF
 
-            if not HAS_TSF:
-                raise RuntimeError(
-                    "Audio backend not available. The _tsf module was not built."
-                )
-            with TsfBackend(soundfont=soundfont) as audio_backend:
-                audio_backend.play(self.midi)
-                if wait:
-                    audio_backend.wait()
-        else:
-            # Default: MIDI backend
-            with LibremidiBackend(port_name=port) as midi_backend:
-                midi_backend.play(self.midi)
-                if wait:
-                    while midi_backend.is_playing():
-                        time.sleep(0.1)
+        Examples:
+            >>> score = Score("piano: c d e")
+            >>> score.play()  # blocks until finished
+            >>> handle = score.play(wait=False)  # returns immediately
+            >>> handle.stop()  # ... and stops when you say so
+        """
+        player = self._make_backend(backend, port, soundfont)
+
+        if not wait:
+            # Ownership passes to the handle: closing the backend here would
+            # cut playback off before it had a chance to start.
+            player.play(self.midi)
+            handle = PlaybackHandle(player)
+            self._playback = handle
+            return handle
+
+        with player as active:
+            active.play(self.midi)
+            active.wait()
+        return None
+
+    def stop(self) -> None:
+        """Stop background playback started by ``play(wait=False)``."""
+        if self._playback is not None:
+            self._playback.close()
+            self._playback = None
 
     def save(self, path: str | Path) -> None:
         """Save the score to a file.

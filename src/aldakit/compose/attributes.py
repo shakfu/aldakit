@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .base import ComposeElement
+from .base import ComposeElement, OctaveContext
 
 if TYPE_CHECKING:
-    pass
+    from ..ast_nodes import ASTNode
 
 from ..ast_nodes import (
     LispListNode,
@@ -111,6 +111,14 @@ class OctaveSet(ComposeElement):
     def to_alda(self) -> str:
         return f"o{self.value}"
 
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        ctx.reset(self.value)
+        return [self.to_ast()]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        ctx.reset(self.value)
+        return [self.to_alda()]
+
 
 @dataclass(frozen=True)
 class OctaveUp(ComposeElement):
@@ -122,6 +130,14 @@ class OctaveUp(ComposeElement):
     def to_alda(self) -> str:
         return ">"
 
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        ctx.reset(ctx.octave + 1 if ctx.octave is not None else None)
+        return [self.to_ast()]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        ctx.reset(ctx.octave + 1 if ctx.octave is not None else None)
+        return [self.to_alda()]
+
 
 @dataclass(frozen=True)
 class OctaveDown(ComposeElement):
@@ -132,6 +148,14 @@ class OctaveDown(ComposeElement):
 
     def to_alda(self) -> str:
         return "<"
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        ctx.reset(ctx.octave - 1 if ctx.octave is not None else None)
+        return [self.to_ast()]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        ctx.reset(ctx.octave - 1 if ctx.octave is not None else None)
+        return [self.to_alda()]
 
 
 @dataclass(frozen=True)

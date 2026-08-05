@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..ast_nodes import PartDeclarationNode
-from .base import ComposeElement
+from .base import ComposeElement, OctaveContext
+
+if TYPE_CHECKING:
+    from ..ast_nodes import ASTNode
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,16 @@ class Part(ComposeElement):
         if self.alias:
             return f'{names} "{self.alias}":'
         return f"{names}:"
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """A part boundary makes the octave unknown until a note states one."""
+        ctx.reset(None)
+        return [self.to_ast()]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """A part boundary makes the octave unknown until a note states one."""
+        ctx.reset(None)
+        return [self.to_alda()]
 
 
 def part(*instruments: str, alias: str | None = None) -> Part:

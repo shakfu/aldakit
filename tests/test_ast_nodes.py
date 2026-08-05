@@ -1,9 +1,6 @@
 """Tests for AST node definitions."""
 
-import pytest
-
 from aldakit.ast_nodes import (
-    ASTNode,
     ASTVisitor,
     RootNode,
     PartNode,
@@ -263,7 +260,8 @@ class TestNoteNode:
     def test_repr_helper_with_duration(self):
         """NoteNode with duration _repr_helper."""
         note = NoteNode(
-            letter="c", duration=DurationNode(components=[NoteLengthNode(denominator=4)])
+            letter="c",
+            duration=DurationNode(components=[NoteLengthNode(denominator=4)]),
         )
         repr_str = note._repr_helper(0)
         assert "duration" in repr_str
@@ -887,7 +885,9 @@ class TestCramNode:
     def test_repr_helper_without_duration(self):
         """CramNode without duration _repr_helper."""
         node = CramNode(
-            events=EventSequenceNode(events=[NoteNode(letter="c"), NoteNode(letter="d")])
+            events=EventSequenceNode(
+                events=[NoteNode(letter="c"), NoteNode(letter="d")]
+            )
         )
         repr_str = node._repr_helper(0)
         assert "CramNode" in repr_str
@@ -1001,7 +1001,9 @@ class TestBracketedSequenceNode:
     def test_repr_helper(self):
         """BracketedSequenceNode _repr_helper."""
         node = BracketedSequenceNode(
-            events=EventSequenceNode(events=[NoteNode(letter="c"), NoteNode(letter="d")])
+            events=EventSequenceNode(
+                events=[NoteNode(letter="c"), NoteNode(letter="d")]
+            )
         )
         repr_str = node._repr_helper(0)
         assert "BracketedSequenceNode" in repr_str

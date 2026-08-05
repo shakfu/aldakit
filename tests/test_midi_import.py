@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from aldakit import Score
-from aldakit.ast_nodes import EventSequenceNode, LispListNode
+from aldakit.ast_nodes import LispListNode, PartNode
 from aldakit.midi.smf_reader import read_midi_file, MidiParseError
 from aldakit.midi.midi_to_ast import (
     midi_pitch_to_note,
@@ -123,13 +123,13 @@ class TestBeatsToDuration:
 
     def test_triplet_eighth_duration(self):
         """Triplet subdivision uses denominator 12."""
-        duration, dots = beats_to_duration(pytest.approx(1 / 3))
+        duration, dots = beats_to_duration(1 / 3)
         assert duration == 12
         assert dots == 0
 
     def test_quintuplet_duration(self):
         """Quintuplet subdivision uses denominator 20."""
-        duration, dots = beats_to_duration(pytest.approx(0.2))
+        duration, dots = beats_to_duration(0.2)
         assert duration == 20
         assert dots == 0
 
@@ -239,11 +239,9 @@ class TestMidiToAst:
             ],
         )
         ast = midi_to_ast(seq)
-        event_seq = next(
-            child for child in ast.children if isinstance(child, EventSequenceNode)
-        )
+        part = next(child for child in ast.children if isinstance(child, PartNode))
         tempo_nodes = [
-            node for node in event_seq.events if isinstance(node, LispListNode)
+            node for node in part.events.events if isinstance(node, LispListNode)
         ]
         assert any(
             node.elements and getattr(node.elements[0], "name", "") == "tempo"

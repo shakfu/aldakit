@@ -7,6 +7,208 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0]
+
+This release fixes fourteen defects that made scores sound wrong rather than
+fail. **Existing scores may sound different** -- see "Changed" for what moved.
+
+### Fixed - correctness
+
+These all produced well-formed output that simply sounded wrong, which is why
+they survived a passing test suite.
+
+- **All 128 General MIDI programs are now reachable under their Alda names.**
+  The instrument table omitted Alda's canonical `midi-` prefixed names and 47 GM
+  programs had no name at all, so `examples/all-instruments.alda` resolved 128 of
+  its 129 instruments to acoustic grand piano. The table is now generated from
+  `docs/alda-language/list-of-instruments.md` by `scripts/gen_instruments.py`
+  (`make instruments`) and covers 318 names across all 128 programs. Names that
+  earlier releases accepted but that are not Alda-canonical are retained in
+  `LEGACY_INSTRUMENT_ALIASES`.
+
+- **`midi-percussion` is routed to MIDI channel 10, and melodic parts are kept
+  off it.** Percussion previously became program 0 on whatever channel it was
+  handed, so `percussion.alda` played as piano; conversely the tenth declared
+  part landed on the drum channel, so `all-instruments.alda`,
+  `midi-channel-management.alda`, `nicechord-alda-demo.alda` and
+  `rachmaninoff_piano_concerto_2_mvmt_2.alda` played melodic lines as drum hits.
+  Percussion parts emit no program change, and key signatures and transposition
+  no longer shift their note numbers.
+
+- **The compose API preserves the octave a note declares.** `Note.octave` was
+  stored and used by `Note.midi_pitch` but discarded by both `to_ast()` and
+  `to_alda()`, so `note("c", octave=5)` generated middle C. This silently broke
+  `voicing()`, `build_chord(octave=...)`, `arpeggiate()`, `Note.transpose()`
+  across octave boundaries, and the register of every `transcribe()` result.
+  Compose elements now thread an `OctaveContext` through conversion, emitting an
+  octave change only where the octave actually changes.
+
+- **Imported MIDI files play back the way they were imported.**
+  `midi_to_ast` emitted a `PartDeclarationNode` and an `EventSequenceNode` as
+  siblings, but the generator had no branch for a bare declaration, so
+  declarations were ignored: every track collapsed onto channel 0 with program 0
+  and the parts played one after another instead of together. Imports now emit
+  `PartNode`, channel 10 is imported as a `midi-percussion` part, and the
+  generator also handles a bare declaration defensively.
+
+- **`Score.play(wait=False)` no longer stops playback immediately.** The backend
+  was created inside a `with` block, so the block exited right after `play()` and
+  closed it, shutting down the playback threads and broadcasting all-notes-off.
+  Non-blocking playback now returns a `PlaybackHandle` that owns the backend; see
+  Added below.
+
+- **The AST-to-Alda exporter is complete.** The previous helper raised
+  `TypeError` on cram expressions and variable definitions, and silently dropped
+  repeats, voices, markers, barlines, ties and millisecond/second durations. It
+  is replaced by `aldakit.serialize.AldaWriter`, a visitor covering every AST
+  node, verified by round-trip tests over every example and shared-suite file.
+
+- **The group-member dot accessor works.** `strings.cello:` created a new cello
+  instance on its own channel starting at time zero instead of addressing the
+  cello of the aliased group, so `examples/dot_accessor.alda` produced the wrong
+  music. The scanner now treats a dot between identifier characters as part of a
+  name, and the generator resolves `alias.instrument` against recorded group
+  membership.
+
+- **`aldakit eval` accepts `--parse-only` and `--no-wait`.** Both were documented
+  in the README; neither was registered on the subparser, so the documented
+  invocation exited with a usage error. `play` and `eval` now share one
+  argument definition.
+
+- **`Note` validates accidentals.** `note("c", accidental="sharp")` produced the
+  literal string `csharp`; anything other than `+`, `-`, `_` and repetitions now
+  raises `ValueError`.
+
+- **The audio backend applies control changes.** `TsfBackend` scheduled programs
+  and notes but ignored `sequence.control_changes`, so `(panning ...)` was a
+  silent no-op in audio mode. The `_tsf` extension gained `schedule_control()`,
+  and it now also selects the General MIDI drum bank for channel 10 so
+  percussion parts sound as drums rather than as a melodic instrument.
+
+- **`SoundFontManager.list()` renamed to `list_installed()`.** Binding the name
+  `list` inside the class body shadowed the builtin and invalidated the
+  `list[Path]` annotations on three methods. `list()` remains as a deprecated
+  alias.
+
+- **Removed a production workaround for a test double.** `beats_to_duration()`
+  unwrapped a `.expected` attribute so that two tests could pass
+  `pytest.approx(...)` as an *input*. The tests now pass plain floats.
+
+- **Playback no longer falls silent when no MIDI ports exist.** On a machine
+  with no MIDI output ports and no `ALDAKIT_SOUNDFONT` or config entry,
+  `aldakit play file.alda` opened a virtual MIDI port and played into it; with
+  nothing connected, that is silence, reported as success. The CLI decided
+  whether a SoundFont was available by consulting only explicit configuration,
+  never `find_soundfont()`. Consequently `-a` also failed with "No soundfont
+  configured" while SoundFonts sat in `~/.aldakit/soundfonts/`. Backend
+  selection is now one function, `cli.resolve_backend()`, shared by `play`,
+  `eval` and `repl` (it previously existed as three near-copies that
+  disagreed), and it uses SoundFont discovery. When audio genuinely is not
+  possible, the virtual-port fallback now warns that nothing will be heard.
+
+- **`TsfBackend` expands `~` and `$VARS` in SoundFont paths.** The config file
+  expanded them but the backend did not, so the documented
+  `TsfBackend(soundfont="~/Music/sf2/FluidR3_GM.sf2")` raised
+  `FileNotFoundError`.
+
+### Documentation
+
+A pre-release audit executed every code block in `README.md` and `docs/`, which
+found claims no test covered:
+
+- `README.md` showed `aldakit FILE` and `aldakit --port X FILE` without the
+  `play` subcommand, a form removed when subcommands were introduced.
+- `README.md` documented `crescendo(start_vel=, end_vel=)`; the parameters are
+  `start_velocity` / `end_velocity`.
+- `docs/extending-aldakit.md` imported eight MIDI-level transformers from
+  `aldakit.compose.transform` instead of `aldakit.midi.transform`, imported
+  `Score` from `aldakit.compose`, called `seq.from_alda()` on the factory
+  function rather than the `Seq` class, and used wrong keywords for
+  `euclidean()`, `cellular_automaton()`, `rest()` and `note()`. It also
+  described MIDI import as future work and mutation methods that do not exist.
+  It is now accurate and framed as a description of the shipped design rather
+  than a proposal.
+- `docs/architecture.d2` labelled edges `export()` and `import()`; the functions
+  are `write_alda()` and `Score.from_midi_file()`. Assets regenerated.
+
+`tests/test_docs.py` now guards against recurrence: every documented `aldakit`
+import must resolve, every ```alda block must parse and generate, every
+documented `aldakit ...` command line must be accepted by the real parser, and
+the concrete expectations in `docs/test_specification.md` must match generated
+output. Prose still needs a human; these cover what a machine can check.
+
+### Added
+
+- **The REPL can reach the filesystem.** It previously had no way to open the
+  files `aldakit play` exists to read, nor to save an improvisation; the only
+  input was typing or pasting.
+  - `:load FILE` reads a file into the session without playing it, reporting
+    its parts, note count and duration. A missing `.alda` suffix is tried, so
+    `:load twinkle` finds `twinkle.alda`. Loading a long score therefore does
+    not tie up the prompt, and the file can be saved or inspected first.
+  - `:play` plays the loaded score; `:play FILE` loads and plays in one step.
+    Loaded scores keep their own tempo: the REPL's default is only prepended to
+    typed input that sets none.
+  - `:save FILE` writes the session as one score, or exports MIDI for `.mid`
+    and `.midi`.
+  - `:ls [DIR]`, `:cd [DIR]`, `:pwd` for navigation, and `:clear` to discard
+    the session.
+  - Tab completion now covers command names and, for `:load`, `:save` and
+    `:cd`, filesystem paths.
+  - `aldakit repl FILE` loads a file on startup, ready for `:play`.
+
+  Command handling moved out of the prompt loop into `handle_command()`.
+  `PromptSession` requires a TTY, so anything inside the loop cannot be tested;
+  the commands now have direct test coverage.
+
+- **`aldakit.serialize`** - `AldaWriter` and `write_alda()` render any AST back
+  to Alda source. Round-tripping preserves musical meaning:
+  `parse(write(parse(src)))` generates identical MIDI.
+
+- **`PlaybackHandle`** - returned by `Score.play(wait=False)` and by
+  `aldakit.play(..., wait=False)`. Exposes `is_playing()`, `wait()`, `stop()`
+  and `close()`, and works as a context manager. `Score.stop()` stops background
+  playback started from that score.
+
+- **Generation diagnostics** - `MidiGenerator.diagnostics` and
+  `Score.diagnostics` report problems that change what is heard without stopping
+  generation: unknown instrument names, undefined variable and marker
+  references, unresolved group members, and MIDI channel exhaustion. The CLI
+  prints them as warnings.
+
+- **Instrument lookup helpers** - `lookup_instrument()`, `is_percussion()`,
+  `normalize_instrument_name()`, `canonical_name()` and `PROGRAM_NAMES` in
+  `aldakit.midi.types`.
+
+- **`_tsf.TsfPlayer.schedule_control(channel, control, value, time)`** for
+  scheduled MIDI control changes in the audio backend.
+
+### Changed
+
+- `organ` now resolves to church organ (program 19), matching Alda, rather than
+  drawbar organ (program 16). Use `midi-drawbar-organ` or the retained legacy
+  alias `drawbar-organ` for the previous behaviour.
+- `MidiGenerator` skips MIDI channel 9 when allocating channels for pitched
+  instruments, leaving 15 melodic channels.
+
+### Testing and CI
+
+- **CI now runs the test suite.** The workflow previously only triggered on
+  `workflow_dispatch` and had no test job at all. It now runs on push and pull
+  request across Linux, macOS and Windows on Python 3.10-3.14, running ruff, ty
+  and pytest, and gates wheel building and publishing on the result.
+- **Golden MIDI fixtures** (`tests/golden/examples.json`, regenerate with
+  `make golden`) pin the exact notes, channels, programs, timings and velocities
+  of all 40 examples, so a change to how a score sounds shows up as a reviewable
+  diff instead of passing silently.
+- **New test modules**: `test_instruments.py`, `test_channel_allocation.py`,
+  `test_serialize.py`, `test_compose_octave.py`, `test_golden_midi.py`,
+  `test_midi_import_playback.py`, `test_playback_handle.py`,
+  `test_cli_arguments.py`, `test_tsf_control_changes.py`, `test_dot_accessor.py`.
+  The suite grew from 1032 to 1678 tests; each fix was verified to fail when
+  reverted.
+- `ruff` and `ty` are clean across `src/`, `tests/` and `scripts/`.
+
 ### Fixed
 
 - **Path expansion tests now work cross-platform** - Fixed brittle `test_expands_tilde` test that failed on Windows due to path separator differences (`/` vs `\`). Tests now use `Path` objects for comparison instead of string matching.

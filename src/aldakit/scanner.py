@@ -270,9 +270,19 @@ class Scanner:
             self._add_token(TokenType.NOTE_LENGTH, value)
 
     def _scan_name(self) -> None:
-        """Scan an identifier/name."""
-        while self._is_identifier_char(self._peek()):
-            self._advance()
+        """Scan an identifier/name.
+
+        A dot inside a name is the group-member accessor (``strings.cello``),
+        so it is consumed as part of the name when a letter follows it. A dot
+        in any other position is a duration dot and is left alone.
+        """
+        while True:
+            if self._is_identifier_char(self._peek()):
+                self._advance()
+            elif self._peek() == "." and self._peek_next().isalpha():
+                self._advance()  # consume the '.'
+            else:
+                break
         lexeme = self.source[self._start : self._current]
         self._add_token(TokenType.NAME, lexeme)
 

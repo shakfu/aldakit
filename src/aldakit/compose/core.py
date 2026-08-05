@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from .base import ComposeElement
+from .base import ComposeElement, OctaveContext
 
 if TYPE_CHECKING:
-    pass
+    from ..ast_nodes import ASTNode
 
 from ..ast_nodes import (
     AtMarkerNode,
@@ -21,6 +21,7 @@ from ..ast_nodes import (
     NoteLengthNode,
     NoteLengthSecondsNode,
     NoteNode,
+    OctaveSetNode,
     RepeatNode,
     RestNode,
     VariableDefinitionNode,
@@ -28,6 +29,9 @@ from ..ast_nodes import (
     VoiceGroupNode,
     VoiceNode,
 )
+
+# Accidental characters Alda understands: sharp, flat, natural.
+_VALID_ACCIDENTALS = frozenset("+-_")
 
 # Pitch to semitone offset from C
 _PITCH_OFFSETS = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
@@ -62,6 +66,16 @@ class Note(ComposeElement):
         # Validate pitch
         if self.pitch.lower() not in _PITCH_OFFSETS:
             raise ValueError(f"Invalid pitch: {self.pitch}. Must be a-g.")
+
+        # Validate accidentals
+        if self.accidental:
+            invalid = set(self.accidental) - _VALID_ACCIDENTALS
+            if invalid:
+                raise ValueError(
+                    f"Invalid accidental: {self.accidental!r}. "
+                    "Use '+' (sharp), '-' (flat) or '_' (natural), "
+                    "repeated for double accidentals."
+                )
 
     def to_ast(self) -> NoteNode:
         """Convert to AST NoteNode."""
@@ -134,6 +148,24 @@ class Note(ComposeElement):
             result += "~"
 
         return result
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to AST events, prefixing an octave change when needed."""
+        events: list[ASTNode] = []
+        octave = ctx.shift_to(self.octave)
+        if octave is not None:
+            events.append(OctaveSetNode(octave=octave, position=None))
+        events.append(self.to_ast())
+        return events
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, prefixing an octave change when needed."""
+        parts: list[str] = []
+        octave = ctx.shift_to(self.octave)
+        if octave is not None:
+            parts.append(f"o{octave}")
+        parts.append(self.to_alda())
+        return parts
 
     @property
     def midi_pitch(self) -> int:
@@ -283,32 +315,56 @@ class Chord(ComposeElement):
 
     def to_ast(self) -> ChordNode:
         """Convert to AST ChordNode."""
-        # Apply chord duration to first note if specified
-        note_asts = []
-        for i, n in enumerate(self.notes):
-            if i == 0 and self.duration is not None:
-                modified_note = n.with_duration(self.duration)
-                if self.dots:
-                    modified_note = modified_note.with_dots(self.dots)
-                note_asts.append(modified_note.to_ast())
-            else:
-                note_asts.append(n.to_ast())
-
-        return ChordNode(notes=note_asts, position=None)
+        return ChordNode(notes=[n.to_ast() for n in self._chord_notes()], position=None)
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        parts = []
+        return "/".join(self._alda_parts(OctaveContext()))
+
+    def _chord_notes(self) -> list[Note]:
+        """Return the chord's notes with the chord duration applied to the first."""
+        notes: list[Note] = []
         for i, n in enumerate(self.notes):
             if i == 0 and self.duration is not None:
-                modified_note = n.with_duration(self.duration)
+                n = n.with_duration(self.duration)
                 if self.dots:
-                    modified_note = modified_note.with_dots(self.dots)
-                parts.append(modified_note.to_alda())
+                    n = n.with_dots(self.dots)
+            notes.append(n)
+        return notes
+
+    def _alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Render each chord member, inserting octave changes between them."""
+        parts: list[str] = []
+        for i, n in enumerate(self._chord_notes()):
+            prefix = ""
+            octave = ctx.shift_to(n.octave)
+            if octave is not None:
+                prefix = f"o{octave} "
+            if (
+                i == 0
+                or n.duration is not None
+                or n.ms is not None
+                or n.seconds is not None
+            ):
+                parts.append(prefix + n.to_alda())
             else:
-                # Subsequent notes don't repeat duration
-                parts.append(n.pitch + (n.accidental or ""))
-        return "/".join(parts)
+                # Subsequent notes don't repeat the chord duration
+                parts.append(prefix + n.pitch.lower() + (n.accidental or ""))
+        return parts
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a ChordNode, inserting octave changes between members."""
+        elements: list = []
+        for n in self._chord_notes():
+            octave = ctx.shift_to(n.octave)
+            if octave is not None:
+                elements.append(OctaveSetNode(octave=octave, position=None))
+            elements.append(n.to_ast())
+        return [ChordNode(notes=elements, position=None)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, inserting octave changes between members."""
+        return ["/".join(self._alda_parts(ctx))]
 
 
 @dataclass
@@ -326,12 +382,25 @@ class Seq(ComposeElement):
 
     def to_ast(self) -> EventSequenceNode:
         """Convert to AST EventSequenceNode."""
-        events = [e.to_ast() for e in self.elements]
-        return EventSequenceNode(events=events, position=None)
+        return EventSequenceNode(events=self.to_events(OctaveContext()), position=None)
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        return " ".join(e.to_alda() for e in self.elements)
+        return " ".join(self.to_alda_parts(OctaveContext()))
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert child elements to AST events, threading octave context."""
+        events: list[ASTNode] = []
+        for element in self.elements:
+            events.extend(element.to_events(ctx))
+        return events
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert child elements to Alda fragments, threading octave context."""
+        parts: list[str] = []
+        for element in self.elements:
+            parts.extend(element.to_alda_parts(ctx))
+        return parts
 
     @classmethod
     def from_alda(cls, source: str) -> Seq:
@@ -396,6 +465,16 @@ class _ParsedSeq(Seq):
         """Return the original source."""
         return self.source
 
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Return the parsed events; parsed source carries its own octave state."""
+        ctx.reset(None)
+        return list(self.to_ast().events)
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Return the original source; it carries its own octave state."""
+        ctx.reset(None)
+        return [self.source]
+
 
 @dataclass(frozen=True)
 class Repeat(ComposeElement):
@@ -411,16 +490,46 @@ class Repeat(ComposeElement):
 
     def to_ast(self) -> RepeatNode:
         """Convert to AST RepeatNode."""
+        return self._build(OctaveContext())
+
+    def _build(self, ctx: OctaveContext) -> RepeatNode:
         from ..ast_nodes import BracketedSequenceNode
 
-        inner_ast = self.element.to_ast()
+        inner_events = self.element.to_events(ctx)
+        if len(inner_events) == 1 and not isinstance(
+            inner_events[0], EventSequenceNode
+        ):
+            inner_ast = inner_events[0]
+        else:
+            inner_ast = EventSequenceNode(
+                events=(
+                    list(inner_events[0].events)
+                    if len(inner_events) == 1
+                    and isinstance(inner_events[0], EventSequenceNode)
+                    else inner_events
+                ),
+                position=None,
+            )
 
-        # Wrap in bracketed sequence if it's an EventSequenceNode
+        # Wrap in a bracketed sequence so the repeat applies to the whole group
         if isinstance(inner_ast, EventSequenceNode):
             bracketed = BracketedSequenceNode(events=inner_ast, position=None)
             return RepeatNode(event=bracketed, times=self.times, position=None)
-        else:
-            return RepeatNode(event=inner_ast, times=self.times, position=None)
+        return RepeatNode(event=inner_ast, times=self.times, position=None)
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a RepeatNode, threading octave context into the body."""
+        return [self._build(ctx)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, threading octave context into the body."""
+        inner = " ".join(self.element.to_alda_parts(ctx))
+        if isinstance(self.element, Seq) and len(self.element.elements) > 1:
+            return [f"[{inner}]*{self.times}"]
+        if " " in inner:
+            # Octave prefix or multi-token body needs bracketing to repeat as a unit
+            return [f"[{inner}]*{self.times}"]
+        return [f"{inner}*{self.times}"]
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
@@ -554,10 +663,28 @@ class Cram(ComposeElement):
 
     def to_ast(self) -> CramNode:
         """Convert to AST CramNode."""
-        # Build event sequence from elements
-        events = []
+        return self._build(OctaveContext())
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a CramNode, threading octave context into the body."""
+        return [self._build(ctx)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, threading octave context into the body."""
+        inner_parts: list[str] = []
         for elem in self.elements:
-            events.append(elem.to_ast())
+            inner_parts.extend(elem.to_alda_parts(ctx))
+        inner = " ".join(inner_parts)
+        if self.duration is not None:
+            dots = "." * self.dots
+            return [f"{{{inner}}}{self.duration}{dots}"]
+        return [f"{{{inner}}}"]
+
+    def _build(self, ctx: OctaveContext) -> CramNode:
+        # Build event sequence from elements
+        events: list[ASTNode] = []
+        for elem in self.elements:
+            events.extend(elem.to_events(ctx))
 
         event_seq = EventSequenceNode(events=events, position=None)
 
@@ -628,14 +755,29 @@ class Voice(ComposeElement):
 
     def to_ast(self) -> VoiceNode:
         """Convert to AST VoiceNode."""
-        events = [elem.to_ast() for elem in self.elements]
-        event_seq = EventSequenceNode(events=events, position=None)
-        return VoiceNode(number=self.number, events=event_seq, position=None)
+        return self._build(OctaveContext())
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        inner = " ".join(elem.to_alda() for elem in self.elements)
-        return f"V{self.number}: {inner}"
+        return self.to_alda_parts(OctaveContext())[0]
+
+    def _build(self, ctx: OctaveContext) -> VoiceNode:
+        events: list[ASTNode] = []
+        for elem in self.elements:
+            events.extend(elem.to_events(ctx))
+        event_seq = EventSequenceNode(events=events, position=None)
+        return VoiceNode(number=self.number, events=event_seq, position=None)
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a VoiceNode, threading octave context into the body."""
+        return [self._build(ctx)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, threading octave context into the body."""
+        parts: list[str] = []
+        for elem in self.elements:
+            parts.extend(elem.to_alda_parts(ctx))
+        return [f"V{self.number}: {' '.join(parts)}"]
 
 
 @dataclass(frozen=True)
@@ -653,14 +795,33 @@ class VoiceGroup(ComposeElement):
 
     def to_ast(self) -> VoiceGroupNode:
         """Convert to AST VoiceGroupNode."""
-        voice_nodes = [v.to_ast() for v in self.voices]
-        return VoiceGroupNode(voices=voice_nodes, position=None)
+        return self.to_events(OctaveContext())[0]  # type: ignore[return-value]
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        lines = [v.to_alda() for v in self.voices]
+        return self.to_alda_parts(OctaveContext())[0]
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a VoiceGroupNode.
+
+        Each voice starts from the octave in force when the group begins, so
+        they are converted independently. After the group the octave is treated
+        as unknown, forcing the next element to state it explicitly.
+        """
+        entry = ctx.octave
+        voice_nodes = []
+        for v in self.voices:
+            voice_nodes.append(v._build(OctaveContext(octave=entry)))
+        ctx.reset(None)
+        return [VoiceGroupNode(voices=voice_nodes, position=None)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source, converting each voice independently."""
+        entry = ctx.octave
+        lines = [v.to_alda_parts(OctaveContext(octave=entry))[0] for v in self.voices]
         lines.append("V0:")  # End voices
-        return "\n".join(lines)
+        ctx.reset(None)
+        return ["\n".join(lines)]
 
 
 def voice(number: int, *elements: ComposeElement) -> Voice:
@@ -709,14 +870,33 @@ class Variable(ComposeElement):
 
     def to_ast(self) -> VariableDefinitionNode:
         """Convert to AST VariableDefinitionNode."""
-        events = [elem.to_ast() for elem in self.elements]
-        event_seq = EventSequenceNode(events=events, position=None)
-        return VariableDefinitionNode(name=self.name, events=event_seq, position=None)
+        return self.to_events(OctaveContext())[0]  # type: ignore[return-value]
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        inner = " ".join(elem.to_alda() for elem in self.elements)
-        return f"{self.name} = {inner}"
+        return self.to_alda_parts(OctaveContext())[0]
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Convert to a VariableDefinitionNode.
+
+        A definition produces no sound where it appears, so it does not affect
+        the surrounding octave context. Its body is converted with its own
+        context because it may be referenced from anywhere.
+        """
+        body = OctaveContext()
+        events: list[ASTNode] = []
+        for elem in self.elements:
+            events.extend(elem.to_events(body))
+        event_seq = EventSequenceNode(events=events, position=None)
+        return [VariableDefinitionNode(name=self.name, events=event_seq, position=None)]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Convert to Alda source with a self-contained body context."""
+        body = OctaveContext()
+        parts: list[str] = []
+        for elem in self.elements:
+            parts.extend(elem.to_alda_parts(body))
+        return [f"{self.name} = {' '.join(parts)}"]
 
 
 @dataclass(frozen=True)
@@ -736,6 +916,16 @@ class VariableRef(ComposeElement):
     def to_alda(self) -> str:
         """Convert to Alda source code."""
         return self.name
+
+    def to_events(self, ctx: OctaveContext) -> list[ASTNode]:
+        """Expanding a variable may change the octave, so mark it unknown."""
+        ctx.reset(None)
+        return [self.to_ast()]
+
+    def to_alda_parts(self, ctx: OctaveContext) -> list[str]:
+        """Expanding a variable may change the octave, so mark it unknown."""
+        ctx.reset(None)
+        return [self.to_alda()]
 
 
 def var(name: str, *elements: ComposeElement) -> Variable:

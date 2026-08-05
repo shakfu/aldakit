@@ -457,7 +457,7 @@ class TestTranscribeSessionQuantization:
         session._swing_next_is_long = False  # Start with short
 
         # Duration outside swing detection range
-        result = session._quantize_beats(2.0, kind="note")
+        session._quantize_beats(2.0, kind="note")
 
         # Should reset to expecting long
         assert session._swing_next_is_long is True

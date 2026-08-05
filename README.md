@@ -15,6 +15,7 @@ A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.i
 - **Audio Playback** - Built-in synthesis via TinySoundFont (no external synth required)
 - **MIDI Export** - Save compositions as Standard MIDI Files
 - **MIDI Import** - Load MIDI files and convert to Alda notation
+- **Alda Export** - Serialize any AST back to Alda source, round-trip safe
 - **Real-time Transcription** - Record from MIDI keyboards and convert to Alda
 - **Programmatic Composition** - Build music with Python using the compose module
 - **Music Theory** - Scale, chord, and interval utilities
@@ -95,8 +96,13 @@ piano:
   o4 c4 d e f | g a b > c
 """)
 
-# Play with options
-score.play(port="FluidSynth", wait=False)
+# Play, blocking until finished
+score.play(port="FluidSynth")
+
+# Or play in the background and keep control of the playback
+handle = score.play(port="FluidSynth", wait=False)
+handle.is_playing()
+handle.stop()
 
 # Save to file
 score.save("output.mid")
@@ -171,9 +177,11 @@ score = Score.from_midi_file("recording.mid", quantize_grid=0.5)
 ```
 
 Features:
-- Multi-track MIDI files (each channel becomes a separate part)
+- Multi-track MIDI files (each channel becomes a separate part, and stays on
+  its own channel when played or re-exported)
+- Channel 10 is imported as a `midi-percussion` part
 - Tempo detection and preservation
-- General MIDI instrument mapping
+- General MIDI instrument mapping across all 128 programs
 - Chord detection for simultaneous notes
 - Configurable timing quantization
 
@@ -278,6 +286,50 @@ Available compose elements:
 - **Attributes**: `tempo(120)`, `volume(80)`, `octave(5)`, `panning(50)`
 - **Dynamics**: `pp()`, `p()`, `mp()`, `mf()`, `f()`, `ff()`
 - **Advanced**: `cram()`, `voice()`, `voice_group()`, `var()`, `var_ref()`, `marker()`, `at_marker()`
+
+Accidentals use Alda's characters: `"+"` (sharp), `"-"` (flat), `"_"` (natural),
+repeated for double accidentals. Anything else raises `ValueError`.
+
+The `octave` a note declares is preserved through both `to_alda()` and MIDI
+generation. Octave is stateful in Alda, so a note only emits an octave change
+where the octave actually changes:
+
+```python
+from aldakit import Score
+from aldakit.compose import part, note
+
+score = Score.from_elements(part("piano"), note("c", octave=5), note("d"))
+print(score.to_alda())  # 'piano: o5 c d'
+print([n.pitch for n in score.midi.notes])  # [72, 74]
+```
+
+### Instrument Names
+
+All 128 General MIDI programs are available under their Alda names. Canonical
+names carry the `midi-` prefix, and most have shorter aliases:
+
+```alda
+midi-acoustic-grand-piano:  # canonical
+piano:                      # alias for the same program
+midi-square-lead:           # synth lead
+midi-percussion:            # drum kit on MIDI channel 10
+```
+
+See [docs/alda-language/list-of-instruments.md](docs/alda-language/list-of-instruments.md)
+for the full list. An unrecognised instrument name falls back to acoustic grand
+piano and reports a warning rather than failing silently:
+
+```python
+score = Score("bogus-instrument: c d e")
+print([str(d) for d in score.diagnostics])
+# ["<input>:1:1: Unknown instrument 'bogus-instrument'; falling back to acoustic grand piano."]
+```
+
+`midi-percussion` (alias `percussion`) is placed on MIDI channel 10, where note
+numbers select drum sounds; key signatures and transposition do not apply to it.
+Melodic parts never use that channel. There are 15 melodic channels, so a score
+with more than 15 pitched parts reports a diagnostic that instrument assignments
+will collide.
 
 ### Scales and Chords
 
@@ -399,7 +451,7 @@ swung = swing(midi_seq, grid=0.5, amount=0.3)            # Apply swing feel
 
 # Velocity transformers
 accented = accent(midi_seq, pattern=[1.0, 0.5, 0.5, 0.5])  # 4/4 accent pattern
-crescendo_seq = crescendo(midi_seq, start_vel=50, end_vel=100)
+crescendo_seq = crescendo(midi_seq, start_velocity=50, end_velocity=100)
 normalized = normalize(midi_seq, target=100)
 
 # Filtering and combining
@@ -505,18 +557,20 @@ aldakit play [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--st
 | `-vp, --virtual-port NAME` | Custom virtual MIDI port name (default: AldakitMIDI) |
 | `--stdin` | Read from stdin (blank line to play) |
 | `--parse-only` | Print AST without playing |
-| `--no-wait` | Don't wait for playback to finish |
+| `--no-wait` | Return without waiting for playback to finish (playback stops when the command exits) |
 
 ### `eval` Subcommand
 
 ```sh
-aldakit eval [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] CODE
+aldakit eval [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-only] [--no-wait] CODE
 ```
 
 | Option | Description |
 | ------ | ----------- |
 | `CODE` | Alda code to evaluate |
 | `-v, --verbose` | Verbose output |
+| `--parse-only` | Print AST without playing |
+| `--no-wait` | Return without waiting for playback to finish |
 | `-o, --output FILE` | Save to MIDI file instead of playing |
 | `--port NAME\|INDEX` | MIDI port by name or index |
 | `-sf, --soundfont FILE` | Use TinySoundFont audio backend |
@@ -526,11 +580,12 @@ aldakit eval [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] CODE
 ### `repl` Subcommand
 
 ```sh
-aldakit repl [-v] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--sequential]
+aldakit repl [-v] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--sequential] [FILE]
 ```
 
 | Option | Description |
 | ------ | ----------- |
+| `FILE` | Alda file to load on startup (use `:play` to hear it) |
 | `-v, --verbose` | Verbose output |
 | `--port NAME\|INDEX` | MIDI port by name or index |
 | `-sf, --soundfont FILE` | Use TinySoundFont audio backend |
@@ -669,12 +724,22 @@ verbose = false
 
 ### Backend Selection Priority
 
-1. CLI `-sf /path/to/soundfont.sf2` forces audio backend with specified soundfont
-2. CLI `-a` / `--audio` forces audio backend using pre-configured soundfont
-3. Config `backend = audio` uses audio backend
-4. If MIDI ports are available, use MIDI (default)
-5. If no MIDI ports available and `soundfont` is configured, fall back to audio
-6. If no MIDI ports and no soundfont configured, create virtual MIDI port ("AldakitMIDI")
+1. CLI `-sf /path/to/soundfont.sf2` forces the audio backend with that SoundFont
+2. CLI `-a` / `--audio` forces the audio backend, using a configured or
+   discovered SoundFont
+3. Config `backend = audio` uses the audio backend
+4. If MIDI output ports are available, use MIDI (default)
+5. If no MIDI ports are available and a SoundFont can be found, use audio
+6. Otherwise create a virtual MIDI port ("AldakitMIDI") and warn that nothing
+   will be heard until a synth or DAW connects to it
+
+A SoundFont counts as available if it is named by `-sf`, by `soundfont` in the
+config file, or by `ALDAKIT_SOUNDFONT`, or if one is discovered in a standard
+location such as `~/.aldakit/soundfonts/` or `~/Music/sf2/`.
+
+If `aldakit play` produces no sound, run `aldakit ports` to see whether any MIDI
+destination exists. With no ports and no SoundFont, MIDI is being sent to a
+virtual port that nothing is listening to.
 
 ### Project-Local Configuration
 
@@ -707,12 +772,66 @@ Features:
 
 REPL Commands:
 
-- `:help` - Show help
-- `:quit` - Exit REPL
-- `:ports` - List MIDI ports
-- `:instruments` - List available instruments
-- `:tempo [BPM]` - Show/set default tempo
-- `:stop` - Stop playback
+| Command | Description |
+| ------- | ----------- |
+| `:load FILE` | Load an Alda file (does not play) |
+| `:play [FILE]` | Play the loaded score, or load and play `FILE` |
+| `:save FILE` | Save the session to `.alda` or `.mid` |
+| `:ls [DIR]` | List Alda files and directories |
+| `:cd [DIR]` | Change directory |
+| `:pwd` | Show the current directory |
+| `:clear` | Forget the session so far |
+| `:ports` | List MIDI ports |
+| `:instruments` | List available instruments |
+| `:tempo [BPM]` | Show/set the default tempo |
+| `:stop` | Stop playback |
+| `:status` | Show playback status |
+| `:concurrent` / `:sequential` | Switch playback mode |
+| `:help` | Show help |
+| `:quit` | Exit the REPL |
+
+Open a file directly from the command line. It is loaded, not played, so the
+REPL is ready immediately:
+
+```sh
+$ aldakit repl examples/twinkle.alda
+Loaded examples/twinkle.alda (1 part, 42 notes, 28.7s)
+Type :play to hear it.
+
+aldakit> :play
+Playing examples/twinkle.alda...
+```
+
+Working with files inside the REPL:
+
+```
+aldakit> :ls
+  examples/
+  sketch.alda
+aldakit> :load sketch.alda
+Loaded sketch.alda (2 parts, 64 notes, 12.4s)
+Type :play to hear it.
+aldakit> :play
+Playing sketch.alda...
+aldakit> piano: c d e f g
+aldakit> :save take-2.alda
+Saved /home/you/music/take-2.alda
+```
+
+`:load` never plays: a file can be inspected, saved or edited before it is
+heard, and opening a long score does not tie up the prompt. `:play` with no
+argument replays whatever is loaded; `:play FILE` is shorthand for loading and
+playing in one step. Typed input still plays as soon as you press Enter.
+
+`:save` writes everything accepted during the session -- typed, pasted or
+loaded -- as a single score. A `.mid` or `.midi` extension exports MIDI
+instead. Note that this is the session's *source*, not a recording of what you
+heard: in concurrent mode inputs are layered as they play, whereas the saved
+file is one score read top to bottom.
+
+A file opened with `:load` (or given on the command line) keeps its own tempo.
+The REPL only prepends its default tempo to input you type that does not set
+one.
 
 ## Alda Syntax Reference
 
@@ -1076,7 +1195,7 @@ Connect a USB MIDI interface or synthesizer, then:
 aldakit ports
 
 # Play to a specific port
-aldakit --port "My MIDI Device" examples/twinkle.alda
+aldakit play --port "My MIDI Device" examples/twinkle.alda
 ```
 
 ### MIDI File Export
@@ -1085,7 +1204,7 @@ If you don't have MIDI playback set up, export to a file:
 
 ```bash
 # Save to MIDI file
-aldakit examples/twinkle.alda -o twinkle.mid
+aldakit play examples/twinkle.alda -o twinkle.mid
 
 # Open with default app
 open twinkle.mid

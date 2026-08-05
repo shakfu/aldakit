@@ -15,10 +15,12 @@ from ..ast_nodes import (
     NoteNode,
     OctaveSetNode,
     PartDeclarationNode,
+    PartNode,
     RestNode,
     RootNode,
 )
-from .types import INSTRUMENT_PROGRAMS, MidiNote, MidiSequence
+from ..constants import MIDI_DRUM_CHANNEL
+from .types import MidiNote, MidiSequence, canonical_name
 
 # MIDI pitch to note letter and accidental
 # We use sharps for black keys
@@ -69,11 +71,10 @@ DOTTED_DURATION_VALUES: list[tuple[int, int, float]] = [
 ]
 
 
-# Reverse mapping from GM program to instrument name
-PROGRAM_TO_INSTRUMENT: dict[int, str] = {}
-for name, program in INSTRUMENT_PROGRAMS.items():
-    if program not in PROGRAM_TO_INSTRUMENT:
-        PROGRAM_TO_INSTRUMENT[program] = name
+# Reverse mapping from GM program to its canonical Alda instrument name
+PROGRAM_TO_INSTRUMENT: dict[int, str] = {
+    program: canonical_name(program) for program in range(128)
+}
 
 
 @dataclass
@@ -143,9 +144,7 @@ def beats_to_duration(beats: float) -> tuple[int, int]:
         Tuple of (duration_value, dots). Duration value is Alda's notation
         where 4 = quarter, 8 = eighth, etc.
     """
-    candidate = beats
-    expected = getattr(candidate, "expected", candidate)
-    beats = float(expected)
+    beats = float(beats)
 
     if beats <= 0:
         return 4, 0  # Default to quarter note
@@ -249,26 +248,37 @@ def midi_to_ast(
         if not notes:
             continue
 
-        # Determine instrument
-        program = channel_programs.get(channel, 0)
-        instrument_name = PROGRAM_TO_INSTRUMENT.get(program, "piano")
+        # Determine instrument. Channel 9 is the General MIDI drum channel:
+        # its note numbers name drums, not pitches.
+        if channel == MIDI_DRUM_CHANNEL:
+            instrument_name = "midi-percussion"
+        else:
+            program = channel_programs.get(channel, 0)
+            instrument_name = canonical_name(program)
 
         # Create part declaration
-        part_node = PartDeclarationNode(
+        declaration = PartDeclarationNode(
             names=[instrument_name],
             alias=None,
             position=None,
         )
-        children.append(part_node)
 
         # Convert notes to quantized form
         quantized = _quantize_notes(notes, bpm, quantize_grid)
 
         # Convert to AST events
         events = _notes_to_events(quantized, bpm, tempo_events)
-        if events:
-            event_seq = EventSequenceNode(events=events, position=None)
-            children.append(event_seq)
+
+        # Wrap declaration and events in a PartNode. A bare PartDeclarationNode
+        # is not an executable event, so emitting the two as siblings would
+        # leave the generator with no part to attach the notes to.
+        children.append(
+            PartNode(
+                declaration=declaration,
+                events=EventSequenceNode(events=events, position=None),
+                position=None,
+            )
+        )
 
     return RootNode(children=children, position=None)
 

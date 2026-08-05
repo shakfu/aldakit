@@ -212,6 +212,7 @@ __marimo__/
 
 # agents
 .claude
+REVIEW.md
 CLAUDE.md
 AGENTS.md
 GEMINI.md

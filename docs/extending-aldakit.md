@@ -1,6 +1,14 @@
 # Extending aldakit: A Programmatic API
 
-This document explores extending aldakit beyond parsing the Alda language to provide a programmatic Python API for music composition. The key insight is that **the AST is the central hub** - all inputs flow into it, all outputs derive from it.
+This document describes the design of aldakit's programmatic composition API,
+which extends the library beyond parsing the Alda language. The key insight is
+that **the AST is the central hub** - all inputs flow into it, all outputs
+derive from it.
+
+Everything described here is implemented. The "Implementation Phases" section
+is kept as a record of how the API was built up, not as a roadmap. For a
+task-oriented guide to the same API, see the "Programmatic Composition" section
+of the [README](../README.md).
 
 ## Architecture Overview
 
@@ -53,18 +61,20 @@ Every musical element is a first-class Python object that can be composed, trans
 
 ```python
 # Notes are objects - all parameters are explicit keywords
-n = note("c", duration=4, accidental="sharp")
+n = note("c", duration=4, accidental="+")   # "+" sharp, "-" flat, "_" natural
 n.transpose(2)  # Returns new note: d#4
 
 # Chords are collections of notes
 c_major = chord(note("c"), note("e"), note("g"))
-c_minor = c_major.flatten(index=1)  # Flatten the third (index 1)
+c_minor = chord(note("c"), note("e", accidental="-"), note("g"))
 
-# Sequences can be manipulated
+# Sequences are transformed by functions, which return new sequences
+from aldakit.compose import invert, reverse, transpose
+
 melody = seq(note("c"), note("d"), note("e"), note("f"))
-melody.reverse()      # f e d c
-melody.retrograde()   # Same as reverse for pitches
-melody.invert()       # Invert intervals
+reverse(melody)        # f e d c (retrograde)
+invert(melody)         # Invert intervals around the first note
+transpose(melody, 5)   # Up a perfect fourth
 ```
 
 ## API Design
@@ -72,8 +82,9 @@ melody.invert()       # Invert intervals
 ### Core Domain Objects
 
 ```python
+from aldakit import Score
 from aldakit.compose import (
-    Score, Part, Voice,
+    Part, Voice,
     note, rest, chord, seq,
     tempo, volume, octave,
 )
@@ -114,8 +125,8 @@ n.with_octave(5)             # c4 in octave 5
 
 ```python
 rest()                       # r (quarter rest)
-rest(2)                      # r2 (half rest)
-rest(ms=1000)                # r1s (one second rest)
+rest(duration=2)             # r2 (half rest)
+rest(ms=1000)                # r1000ms (one second rest)
 ```
 
 #### Chords
@@ -141,7 +152,7 @@ dom7("g")                    # g/b/d/f
 melody = seq(note("c"), note("d"), note("e"), note("f"))
 
 # From string (parsed as Alda)
-melody = seq.from_alda("c d e f g")
+melody = Seq.from_alda("c d e f g")
 
 # Repeat
 melody * 4                   # [c d e f]*4
@@ -153,14 +164,16 @@ intro + verse + chorus       # Sequences combine
 #### Parts and Instruments
 
 ```python
-# Simple part
-Part("piano").add(note("c"), note("d"), note("e"))
+# A part declares instruments; the events that follow it belong to it
+from aldakit import Score
+
+Score.from_elements(part("piano"), note("c"), note("d"), note("e"))
 
 # With alias
-Part("violin", alias="v1")
+part("violin", alias="v1")
 
 # Multi-instrument
-Part("violin", "viola", "cello", alias="strings")
+part("violin", "viola", "cello", alias="strings")
 ```
 
 #### Attributes
@@ -226,7 +239,7 @@ class Score:
 
     @classmethod
     def from_midi_file(cls, path: str | Path) -> "Score":
-        """Import a MIDI file (future)."""
+        """Import a MIDI file."""
         raise NotImplementedError("MIDI import not yet implemented")
 
     # === Builder Methods (return self for chaining) ===
@@ -371,10 +384,11 @@ weather_to_music(temps).play()
 ```python
 from aldakit import Score
 from aldakit.compose import seq, rest, part
+from aldakit.compose import Seq
 from aldakit.compose.transform import transpose, invert, reverse
 
 # Define a motif
-motif = seq.from_alda("c8 d e- g")
+motif = Seq.from_alda("c8 d e- g")
 
 # Transform it
 motif_up = transpose(motif, semitones=5)   # Up a fourth
@@ -420,17 +434,19 @@ c1/e/g
 
 ```python
 from aldakit import Score
+from aldakit.compose import Seq
 from aldakit.compose.transform import transpose
 
 # Load an Alda file
 score = Score.from_file("song.alda")
 
-# Transpose entire score up 2 semitones
-transposed = transpose(score, semitones=2)
+# Transform a sequence, then rebuild a score from it
+motif = Seq.from_alda(score.to_alda())
+transposed = transpose(motif, 2)
 
-# Save back to Alda or MIDI
-transposed.save("song_transposed.alda")
-transposed.save("song_transposed.mid")
+new_score = Score.from_elements(transposed)
+new_score.save("song_transposed.alda")
+new_score.save("song_transposed.mid")
 ```
 
 ## Implementation Strategy
@@ -490,7 +506,7 @@ class Note:
 5. Scale and mode helpers
 6. Chord voicing utilities
 
-### Phase 6: MIDI Import (Future)
+### Phase 6: MIDI Import
 
 1. MIDI file import to AST
 2. Real-time MIDI transcription
@@ -499,7 +515,8 @@ class Note:
 
 ```text
 src/aldakit/
-  score.py              # Unified Score class (already exists, to be extended)
+  score.py              # Unified Score class
+  serialize.py          # AST -> Alda source (AldaWriter)
   compose/
     __init__.py         # Public API: note, rest, chord, seq, part, tempo, etc.
     core.py             # note(), rest(), chord(), seq() domain objects
@@ -535,11 +552,12 @@ organized into two categories based on what level they operate at:
 - Located in `aldakit.midi.transform`
 
 ```python
+from aldakit.compose import Seq
 from aldakit.compose.transform import transpose, reverse  # AST-level
 from aldakit.midi.transform import humanize, swing        # MIDI-level
 
 # AST-level: can export to Alda
-melody = seq.from_alda("c d e f g")
+melody = Seq.from_alda("c d e f g")
 transposed = transpose(melody, semitones=5)
 print(transposed.to_alda())  # "f g a a+ > c"
 
@@ -552,9 +570,10 @@ humanized = humanize(midi_seq, timing=0.1, velocity=0.05)
 ### Pitch Transformers
 
 ```python
+from aldakit.compose import Seq
 from aldakit.compose.transform import transpose, invert, reverse, shuffle
 
-melody = seq.from_alda("c d e f g")
+melody = Seq.from_alda("c d e f g")
 
 transpose(melody, 5)        # Up a perfect fourth
 transpose(melody, -12)      # Down an octave
@@ -566,34 +585,41 @@ shuffle(melody)             # Random permutation of notes
 ### Timing Transformers
 
 ```python
-from aldakit.compose.transform import quantize, humanize, swing, stretch
+from aldakit import Score
+from aldakit.midi.transform import quantize, humanize, swing, stretch
 
-# Quantize to grid (snap to nearest division)
-quantize(melody, 16)        # Quantize to 16th notes
-quantize(melody, 8)         # Quantize to 8th notes
+# These operate on a MidiSequence (absolute seconds), not on a compose Seq
+midi_seq = Score("piano: c d e f g").midi
 
-# Humanize (add subtle timing variations)
-humanize(melody, amount=0.1)  # 10% timing deviation
-humanize(melody, amount=0.2, velocity=0.15)  # Also vary velocity
+# Quantize to a grid, given in seconds
+quantize(midi_seq, grid=0.25)              # Snap to the 0.25s grid
+quantize(midi_seq, grid=0.25, strength=0.5)  # Halfway to the grid
+
+# Humanize (add subtle timing and velocity variation)
+humanize(midi_seq, timing=0.02)                 # +/- 20ms
+humanize(midi_seq, timing=0.02, velocity=10)    # Also vary velocity
 
 # Swing (delay offbeat notes)
-swing(melody, amount=0.3)   # 30% swing feel
-swing(melody, amount=0.5)   # Heavy shuffle
+swing(midi_seq, amount=0.3)   # 30% swing feel
+swing(midi_seq, amount=0.5)   # Heavy shuffle
 
 # Time stretch
-stretch(melody, 2.0)        # Double duration (half speed)
-stretch(melody, 0.5)        # Half duration (double speed)
+stretch(midi_seq, 2.0)        # Double duration (half speed)
+stretch(midi_seq, 0.5)        # Half duration (double speed)
 ```
 
 ### Velocity Transformers
 
 ```python
-from aldakit.compose.transform import accent, crescendo, diminuendo, normalize
+from aldakit import Score
+from aldakit.midi.transform import accent, crescendo, diminuendo, normalize
 
-accent(melody, pattern=[1, 0, 0, 0])  # Accent every 4th note
-crescendo(melody, start=40, end=100)  # Gradually increase velocity
-diminuendo(melody, start=100, end=40) # Gradually decrease velocity
-normalize(melody, target=80)          # Normalize all velocities
+midi_seq = Score("piano: c d e f g").midi
+
+accent(midi_seq, pattern=[1.0, 0.6, 0.6, 0.6])          # Accent every 4th note
+crescendo(midi_seq, start_velocity=40, end_velocity=100)  # Increase velocity
+diminuendo(midi_seq, start_velocity=100, end_velocity=40) # Decrease velocity
+normalize(midi_seq, target=80)                            # Even out velocities
 ```
 
 ### Structural Transformers
@@ -613,18 +639,23 @@ interleave(melody1, melody2)  # Alternate notes from each
 ### Chaining Transformers
 
 ```python
-from aldakit.compose.transform import pipe
+from aldakit.compose import note, seq
+from aldakit.compose.transform import augment, pipe, reverse, transpose
 
-# Apply multiple transformations
+# pipe() chains AST-level transformers, which all take and return a Seq.
+# MIDI-level transformers (humanize, swing) work on a MidiSequence instead,
+# so they belong after generation rather than in this chain.
+melody = seq(note("c"), note("d"), note("e"))
+
 result = pipe(
     melody,
     lambda m: transpose(m, 5),
-    lambda m: humanize(m, 0.1),
-    lambda m: swing(m, 0.2),
+    reverse,
+    lambda m: augment(m, 2),
 )
 
 # Or use functional composition
-transformed = swing(humanize(transpose(melody, 5), 0.1), 0.2)
+transformed = augment(reverse(transpose(melody, 5)), 2)
 ```
 
 ## Generative Functions
@@ -699,12 +730,12 @@ rest_probability(melody, probability=0.2)  # 20% of notes become rests
 from aldakit.compose.generate import euclidean
 
 # Euclidean rhythm: distribute k hits over n steps
-euclidean(hits=3, steps=8, note="c")   # [x . . x . . x .]
-euclidean(hits=5, steps=8, note="c")   # [x . x x . x x .]
-euclidean(hits=7, steps=12, note="c")  # West African bell pattern
+euclidean(hits=3, steps=8, pitch="c")   # [x . . x . . x .]
+euclidean(hits=5, steps=8, pitch="c")   # [x . x x . x x .]
+euclidean(hits=7, steps=12, pitch="c")  # West African bell pattern
 
 # With rotation
-euclidean(hits=3, steps=8, note="c", rotate=1)  # Rotate pattern
+euclidean(hits=3, steps=8, pitch="c", rotate=1)  # Rotate pattern
 ```
 
 ### Markov Chains
@@ -743,8 +774,8 @@ rules = {
 
 # Map symbols to notes
 note_map = {
-    "A": note("c", 8),
-    "B": note("e", 8),
+    "A": note("c", duration=8),
+    "B": note("e", duration=8),
 }
 
 # Generate and expand
@@ -766,8 +797,8 @@ melody = cellular_automaton(
     rule=110,
     width=8,
     steps=16,
-    note_on="c",
-    note_off=rest()
+    pitch_on="c",   # cells that are "off" become rests
+    duration=16,
 )
 ```
 
@@ -779,15 +810,17 @@ from aldakit.compose import part
 from aldakit.compose.generate import euclidean, random_walk, markov_chain
 
 # Layer different generative techniques
-score = Score.from_elements(
-    part("drums"),
-    euclidean(hits=5, steps=16, note="c"),  # Kick pattern
+chain = markov_chain({"c": {"e": 0.5, "g": 0.5}, "e": {"c": 1.0}, "g": {"c": 1.0}})
 
-    part("bass"),
-    random_walk(start="c", steps=16, octave=2),
+score = Score.from_elements(
+    part("midi-percussion"),
+    euclidean(hits=5, steps=16, pitch="c"),  # Kick pattern
+
+    part("acoustic-bass"),
+    random_walk("c", steps=16, duration=8),
 
     part("piano"),
-    markov_chain({...}).generate(length=16)
+    chain.generate(start="c", length=16, duration=8),
 )
 
 score.play()
@@ -808,11 +841,12 @@ The compose API extends the existing parser/generator with programmatic construc
 | Python Objects -> Alda | `to_alda()` | Implemented (compose module) |
 | MIDI File -> Score | `Score.from_file()` | Implemented |
 | MIDI Input -> Score | `transcribe()` | Implemented |
+| AST -> Alda | `write_alda()` | Implemented (serialize module) |
 
 The parser remains essential for:
 
 - The `Score.from_source()` constructor
-- The `seq.from_alda()` convenience method for parsing snippets
+- The `Seq.from_alda()` convenience method for parsing snippets
 - Interop with other Alda tools
 
 ## MIDI Import
@@ -823,7 +857,6 @@ The unified Score architecture supports MIDI import through the same interface:
 
 ```python
 from aldakit import Score
-from aldakit.compose.transform import transpose
 
 # Import a MIDI file to Score
 score = Score.from_file("recording.mid")
@@ -833,7 +866,10 @@ print(score.to_alda())
 # Output: piano: c4 d e f | g2 r2
 
 # Or manipulate and re-export
-transposed = transpose(score, semitones=5)
+from aldakit.compose import Seq
+from aldakit.compose.transform import transpose
+
+transposed = Score.from_elements(transpose(Seq.from_alda(score.to_alda()), 5))
 transposed.save("transposed.mid")
 transposed.save("transposed.alda")
 ```
@@ -871,7 +907,7 @@ from aldakit import Score
 # All roads lead to Score
 score = Score.from_source("piano: c d e")       # From Alda text
 score = Score.from_file("song.alda")            # From Alda file
-score = Score.from_file("song.mid")             # From MIDI file (future)
+score = Score.from_file("song.mid")             # From MIDI file
 score = Score.from_elements(part, tempo, notes) # From Python objects
 
 # All outputs derive from Score

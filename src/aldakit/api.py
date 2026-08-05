@@ -5,42 +5,58 @@ from __future__ import annotations
 from pathlib import Path
 
 from .midi.backends import LibremidiBackend
-from .score import Score
+from .score import PlaybackHandle, Score
 
 
-def play(source: str, port: str | None = None, wait: bool = True) -> None:
+def play(
+    source: str, port: str | None = None, wait: bool = True
+) -> PlaybackHandle | None:
     """Parse and play Alda source code.
 
     Args:
         source: Alda source code string.
         port: MIDI output port name. If None, uses the first available
             port or creates a virtual port named "AldakitMIDI".
-        wait: If True (default), block until playback completes.
+        wait: If True (default), block until playback completes. If False,
+            playback continues in the background and a handle is returned.
+
+    Returns:
+        None when ``wait`` is True, otherwise a
+        :class:`~aldakit.score.PlaybackHandle`. Keep a reference to it:
+        letting it be garbage collected stops playback.
 
     Examples:
         >>> import aldakit
         >>> aldakit.play("piano: c d e f g")
-        >>> aldakit.play("piano: c d e", port="FluidSynth", wait=False)
+        >>> handle = aldakit.play("piano: c d e", port="FluidSynth", wait=False)
+        >>> handle.stop()
     """
     score = Score(source)
-    score.play(port=port, wait=wait)
+    return score.play(port=port, wait=wait)
 
 
-def play_file(path: str | Path, port: str | None = None, wait: bool = True) -> None:
+def play_file(
+    path: str | Path, port: str | None = None, wait: bool = True
+) -> PlaybackHandle | None:
     """Parse and play an Alda file.
 
     Args:
         path: Path to the Alda file.
         port: MIDI output port name. If None, uses the first available
             port or creates a virtual port named "AldakitMIDI".
-        wait: If True (default), block until playback completes.
+        wait: If True (default), block until playback completes. If False,
+            playback continues in the background and a handle is returned.
+
+    Returns:
+        None when ``wait`` is True, otherwise a
+        :class:`~aldakit.score.PlaybackHandle`.
 
     Examples:
         >>> import aldakit
         >>> aldakit.play_file("song.alda")
     """
     score = Score.from_file(path)
-    score.play(port=port, wait=wait)
+    return score.play(port=port, wait=wait)
 
 
 def save(source: str, path: str | Path) -> None:

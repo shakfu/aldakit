@@ -25,6 +25,7 @@ from ..ast_nodes import (
     OctaveSetNode,
     OctaveUpNode,
     OnRepetitionsNode,
+    PartDeclarationNode,
     PartNode,
     RepeatNode,
     RestNode,
@@ -33,12 +34,14 @@ from ..ast_nodes import (
     VariableReferenceNode,
     VoiceGroupNode,
 )
+from ..constants import MIDI_DRUM_CHANNEL, MIDI_MAX_CHANNELS
 from ..midi.types import (
-    INSTRUMENT_PROGRAMS,
     MidiNote,
     MidiProgramChange,
     MidiSequence,
     MidiTempoChange,
+    is_percussion,
+    lookup_instrument,
     note_to_midi,
 )
 
@@ -120,6 +123,27 @@ MODE_INTERVALS: dict[str, int] = {
 }
 
 
+# Channels available to pitched instruments. Channel 9 (MIDI channel 10) is
+# reserved by the General MIDI spec for percussion, where the note number
+# selects a drum sound rather than a pitch.
+MELODIC_CHANNELS: tuple[int, ...] = tuple(
+    c for c in range(MIDI_MAX_CHANNELS) if c != MIDI_DRUM_CHANNEL
+)
+
+
+@dataclass
+class Diagnostic:
+    """A non-fatal problem found while generating MIDI."""
+
+    message: str
+    position: object = None  # SourcePosition | None
+
+    def __str__(self) -> str:
+        if self.position is not None:
+            return f"{self.position}: {self.message}"
+        return self.message
+
+
 @dataclass
 class PartState:
     """State for a single part/instrument."""
@@ -134,6 +158,7 @@ class PartState:
     program: int = 0
     key_signature: dict[str, str] = field(default_factory=dict)  # note -> accidental
     transpose: int = 0  # Transposition in semitones
+    percussion: bool = False  # True for midi-percussion (channel 9)
 
 
 @dataclass
@@ -147,8 +172,12 @@ class GeneratorState:
     current_parts: list[str] = field(
         default_factory=list
     )  # Active parts (multi-instrument support)
-    next_channel: int = 0
+    next_channel: int = 0  # Index into MELODIC_CHANNELS
     repetition_number: int = 1  # Current repetition when in a repeat loop
+    diagnostics: list[Diagnostic] = field(default_factory=list)
+    # Aliased instrument groups: alias -> {instrument name: internal part name}.
+    # Populated by 'violin/viola "strings":' so that 'strings.viola:' resolves.
+    groups: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 class MidiGenerator:
@@ -186,16 +215,46 @@ class MidiGenerator:
 
         return self.sequence
 
+    @property
+    def diagnostics(self) -> list[Diagnostic]:
+        """Non-fatal problems found during the last generate() call.
+
+        Includes unknown instrument names, undefined variable and marker
+        references, and MIDI channel exhaustion.
+        """
+        return self.state.diagnostics
+
+    def _warn(self, message: str, position: object = None) -> None:
+        """Record a non-fatal problem."""
+        self.state.diagnostics.append(Diagnostic(message, position))
+
+    def _allocate_channel(self) -> int:
+        """Allocate the next melodic MIDI channel, skipping the drum channel.
+
+        There are only 15 melodic channels. Once they are exhausted, channels
+        are reused from the start and a diagnostic is recorded, because the
+        reused channel's program change will be overwritten.
+        """
+        index = self.state.next_channel
+        if index >= len(MELODIC_CHANNELS):
+            self._warn(
+                f"More than {len(MELODIC_CHANNELS)} melodic parts declared; "
+                "MIDI channels are being reused and instrument assignments "
+                "will collide."
+            )
+            index %= len(MELODIC_CHANNELS)
+        self.state.next_channel += 1
+        return MELODIC_CHANNELS[index]
+
     def _get_part_state(self) -> PartState:
         """Get the current part state (first active part), creating default if needed."""
         if not self.state.current_parts:
             # Create implicit part
             self.state.current_parts = ["_default"]
             self.state.parts["_default"] = PartState(
-                channel=self.state.next_channel,
+                channel=self._allocate_channel(),
                 program=0,
             )
-            self.state.next_channel = min(15, self.state.next_channel + 1)
 
         return self.state.parts[self.state.current_parts[0]]
 
@@ -209,6 +268,16 @@ class MidiGenerator:
         """Process an AST node."""
         if isinstance(node, PartNode):
             self._process_part(node)
+        elif isinstance(node, PartDeclarationNode):
+            # A declaration on its own switches the active part; the events
+            # that follow are separate siblings.
+            self._process_part(
+                PartNode(
+                    declaration=node,
+                    events=EventSequenceNode(events=[], position=node.position),
+                    position=node.position,
+                )
+            )
         elif isinstance(node, EventSequenceNode):
             self._process_event_sequence(node)
         elif isinstance(node, NoteNode):
@@ -249,15 +318,47 @@ class MidiGenerator:
         elif isinstance(node, BracketedSequenceNode):
             self._process_event_sequence(node.events)
 
+    def _resolve_group_member(self, name: str) -> str | None:
+        """Resolve a dotted group-member reference such as ``strings.cello``.
+
+        Args:
+            name: The reference as written in the score.
+
+        Returns:
+            The internal part name, or None if this is not a resolvable
+            group-member reference.
+        """
+        if "." not in name:
+            return None
+        group, _, member = name.partition(".")
+        members = self.state.groups.get(group)
+        if members is None:
+            return None
+        return members.get(member.lower())
+
     def _process_part(self, node: PartNode) -> None:
         """Process a part declaration and its events."""
         # Get instrument name(s)
         names = node.declaration.names
         alias = node.declaration.alias
 
+        # A dotted reference selects one member of a previously aliased group
+        # (violin/viola/cello "strings":  then  strings.cello:).
+        if len(names) == 1 and "." in names[0] and alias is None:
+            resolved = self._resolve_group_member(names[0])
+            if resolved is not None:
+                self.state.current_parts = [resolved]
+                self._process_event_sequence(node.events)
+                return
+            self._warn(
+                f"Unknown group member {names[0]!r}; no aliased group defines it.",
+                node.declaration.position,
+            )
+
         # For multi-instrument parts (violin/viola/cello), create a part for each
         # The alias applies to the group but each instrument gets its own channel
         active_parts = []
+        group_members: dict[str, str] = {}
 
         for i, name in enumerate(names):
             # Use alias+index for group naming, or just instrument name
@@ -268,14 +369,35 @@ class MidiGenerator:
             else:
                 part_name = name
 
+            group_members[name.lower()] = part_name
+
             # Create or get part state
             if part_name not in self.state.parts:
-                # Determine MIDI program from instrument name
-                normalized = name.lower().replace("_", "-")
-                program = INSTRUMENT_PROGRAMS.get(normalized, 0)
+                if is_percussion(name):
+                    # Percussion always lives on the GM drum channel and takes
+                    # no program change: the note number selects the drum sound.
+                    self.state.parts[part_name] = PartState(
+                        channel=MIDI_DRUM_CHANNEL,
+                        program=0,
+                        tempo=self.state.global_tempo,
+                        percussion=True,
+                    )
+                    active_parts.append(part_name)
+                    continue
 
-                channel = self.state.next_channel
-                self.state.next_channel = min(15, self.state.next_channel + 1)
+                # Determine MIDI program from instrument name
+                program = lookup_instrument(name)
+                if program is None:
+                    if "." not in name:
+                        # A dotted name already reported an unresolved group
+                        self._warn(
+                            f"Unknown instrument {name!r}; "
+                            "falling back to acoustic grand piano.",
+                            node.declaration.position,
+                        )
+                    program = 0
+
+                channel = self._allocate_channel()
 
                 self.state.parts[part_name] = PartState(
                     channel=channel,
@@ -293,6 +415,10 @@ class MidiGenerator:
                 )
 
             active_parts.append(part_name)
+
+        # Record group membership so "alias.instrument" can address one member
+        if alias:
+            self.state.groups[alias] = group_members
 
         self.state.current_parts = active_parts
 
@@ -320,7 +446,11 @@ class MidiGenerator:
         for part in self._get_all_part_states():
             # Determine accidentals: use explicit accidentals, or key signature, or none
             accidentals = node.accidentals
-            if not accidentals:
+            if part.percussion:
+                # On the drum channel a note number names a drum, so key
+                # signatures and transposition must not shift it.
+                accidentals = node.accidentals
+            elif not accidentals:
                 # No explicit accidentals - check key signature
                 letter = node.letter.lower()
                 if letter in part.key_signature:
@@ -333,7 +463,7 @@ class MidiGenerator:
             midi_note = note_to_midi(node.letter, part.octave, accidentals)
 
             # Apply transposition
-            if part.transpose != 0:
+            if part.transpose != 0 and not part.percussion:
                 midi_note = max(0, min(127, midi_note + part.transpose))
 
             # Calculate duration
@@ -727,6 +857,8 @@ class MidiGenerator:
         """Process a variable reference."""
         if node.name in self.state.variables:
             self._process_event_sequence(self.state.variables[node.name])
+        else:
+            self._warn(f"Undefined variable {node.name!r}.", node.position)
 
     def _process_marker(self, node: MarkerNode) -> None:
         """Process a marker definition."""
@@ -739,6 +871,8 @@ class MidiGenerator:
             target_time = self.state.markers[node.name]
             for part in self._get_all_part_states():
                 part.current_time = target_time
+        else:
+            self._warn(f"Undefined marker {node.name!r}.", node.position)
 
     def _process_voice_group(self, node: VoiceGroupNode) -> None:
         """Process a voice group."""

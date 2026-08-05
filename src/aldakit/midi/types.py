@@ -3,6 +3,14 @@
 from dataclasses import dataclass, field
 from enum import IntEnum
 
+from ._instruments import INSTRUMENT_PROGRAMS as _CANONICAL_PROGRAMS
+
+# Re-exported so callers can use aldakit.midi.types as the single entry point
+# for instrument lookups.
+from ._instruments import PERCUSSION_NAMES as PERCUSSION_NAMES
+from ._instruments import PROGRAM_NAMES as PROGRAM_NAMES
+from ._instruments import canonical_name as canonical_name
+
 
 class GeneralMidiProgram(IntEnum):
     """General MIDI program numbers for common instruments."""
@@ -168,72 +176,42 @@ class GeneralMidiProgram(IntEnum):
     GUNSHOT = 127
 
 
-# Mapping from Alda instrument names to GM program numbers
-INSTRUMENT_PROGRAMS: dict[str, int] = {
-    # Piano
-    "piano": GeneralMidiProgram.ACOUSTIC_GRAND_PIANO,
+# Instrument name resolution
+# ---------------------------------------------------------------------------
+# The canonical table is generated from docs/alda-language/list-of-instruments.md
+# by scripts/gen_instruments.py and covers all 128 General MIDI programs under
+# their Alda names and aliases.
+
+# Names accepted by earlier aldakit releases that are not Alda-canonical. They
+# are kept so existing scores keep working; new scores should prefer the
+# canonical (usually "midi-" prefixed) names.
+LEGACY_INSTRUMENT_ALIASES: dict[str, int] = {
     "acoustic-grand-piano": GeneralMidiProgram.ACOUSTIC_GRAND_PIANO,
     "bright-acoustic-piano": GeneralMidiProgram.BRIGHT_ACOUSTIC_PIANO,
     "electric-grand-piano": GeneralMidiProgram.ELECTRIC_GRAND_PIANO,
     "honky-tonk-piano": GeneralMidiProgram.HONKY_TONK_PIANO,
     "electric-piano-1": GeneralMidiProgram.ELECTRIC_PIANO_1,
     "electric-piano-2": GeneralMidiProgram.ELECTRIC_PIANO_2,
-    "harpsichord": GeneralMidiProgram.HARPSICHORD,
-    "clavinet": GeneralMidiProgram.CLAVINET,
-    # Chromatic Percussion
-    "celesta": GeneralMidiProgram.CELESTA,
-    "glockenspiel": GeneralMidiProgram.GLOCKENSPIEL,
-    "music-box": GeneralMidiProgram.MUSIC_BOX,
-    "vibraphone": GeneralMidiProgram.VIBRAPHONE,
-    "marimba": GeneralMidiProgram.MARIMBA,
-    "xylophone": GeneralMidiProgram.XYLOPHONE,
-    "tubular-bells": GeneralMidiProgram.TUBULAR_BELLS,
-    "dulcimer": GeneralMidiProgram.DULCIMER,
-    # Organ
-    "organ": GeneralMidiProgram.DRAWBAR_ORGAN,
     "drawbar-organ": GeneralMidiProgram.DRAWBAR_ORGAN,
     "percussive-organ": GeneralMidiProgram.PERCUSSIVE_ORGAN,
     "rock-organ": GeneralMidiProgram.ROCK_ORGAN,
     "church-organ": GeneralMidiProgram.CHURCH_ORGAN,
     "reed-organ": GeneralMidiProgram.REED_ORGAN,
-    "accordion": GeneralMidiProgram.ACCORDION,
-    "harmonica": GeneralMidiProgram.HARMONICA,
     "tango-accordion": GeneralMidiProgram.TANGO_ACCORDION,
-    # Guitar
-    "guitar": GeneralMidiProgram.ACOUSTIC_GUITAR_NYLON,
-    "acoustic-guitar": GeneralMidiProgram.ACOUSTIC_GUITAR_NYLON,
     "acoustic-guitar-nylon": GeneralMidiProgram.ACOUSTIC_GUITAR_NYLON,
     "acoustic-guitar-steel": GeneralMidiProgram.ACOUSTIC_GUITAR_STEEL,
     "electric-guitar-jazz": GeneralMidiProgram.ELECTRIC_GUITAR_JAZZ,
-    "electric-guitar-clean": GeneralMidiProgram.ELECTRIC_GUITAR_CLEAN,
     "electric-guitar-muted": GeneralMidiProgram.ELECTRIC_GUITAR_MUTED,
     "overdriven-guitar": GeneralMidiProgram.OVERDRIVEN_GUITAR,
     "distortion-guitar": GeneralMidiProgram.DISTORTION_GUITAR,
-    "electric-guitar-distorted": GeneralMidiProgram.DISTORTION_GUITAR,
     "guitar-harmonics": GeneralMidiProgram.GUITAR_HARMONICS,
-    # Bass
     "bass": GeneralMidiProgram.ACOUSTIC_BASS,
-    "acoustic-bass": GeneralMidiProgram.ACOUSTIC_BASS,
-    "electric-bass": GeneralMidiProgram.ELECTRIC_BASS_FINGER,
-    "electric-bass-finger": GeneralMidiProgram.ELECTRIC_BASS_FINGER,
-    "electric-bass-pick": GeneralMidiProgram.ELECTRIC_BASS_PICK,
-    "fretless-bass": GeneralMidiProgram.FRETLESS_BASS,
     "slap-bass-1": GeneralMidiProgram.SLAP_BASS_1,
     "slap-bass-2": GeneralMidiProgram.SLAP_BASS_2,
     "synth-bass-1": GeneralMidiProgram.SYNTH_BASS_1,
     "synth-bass-2": GeneralMidiProgram.SYNTH_BASS_2,
-    # Strings
-    "violin": GeneralMidiProgram.VIOLIN,
-    "viola": GeneralMidiProgram.VIOLA,
-    "cello": GeneralMidiProgram.CELLO,
-    "contrabass": GeneralMidiProgram.CONTRABASS,
-    "double-bass": GeneralMidiProgram.CONTRABASS,
     "tremolo-strings": GeneralMidiProgram.TREMOLO_STRINGS,
     "pizzicato-strings": GeneralMidiProgram.PIZZICATO_STRINGS,
-    "harp": GeneralMidiProgram.ORCHESTRAL_HARP,
-    "orchestral-harp": GeneralMidiProgram.ORCHESTRAL_HARP,
-    "timpani": GeneralMidiProgram.TIMPANI,
-    # Ensemble
     "string-ensemble-1": GeneralMidiProgram.STRING_ENSEMBLE_1,
     "string-ensemble-2": GeneralMidiProgram.STRING_ENSEMBLE_2,
     "synth-strings-1": GeneralMidiProgram.SYNTH_STRINGS_1,
@@ -243,36 +221,43 @@ INSTRUMENT_PROGRAMS: dict[str, int] = {
     "voice-oohs": GeneralMidiProgram.VOICE_OOHS,
     "synth-choir": GeneralMidiProgram.SYNTH_CHOIR,
     "orchestra-hit": GeneralMidiProgram.ORCHESTRA_HIT,
-    # Brass
-    "trumpet": GeneralMidiProgram.TRUMPET,
-    "trombone": GeneralMidiProgram.TROMBONE,
-    "tuba": GeneralMidiProgram.TUBA,
     "muted-trumpet": GeneralMidiProgram.MUTED_TRUMPET,
-    "french-horn": GeneralMidiProgram.FRENCH_HORN,
     "brass-section": GeneralMidiProgram.BRASS_SECTION,
     "synth-brass-1": GeneralMidiProgram.SYNTH_BRASS_1,
     "synth-brass-2": GeneralMidiProgram.SYNTH_BRASS_2,
-    # Reed
-    "soprano-sax": GeneralMidiProgram.SOPRANO_SAX,
-    "alto-sax": GeneralMidiProgram.ALTO_SAX,
-    "tenor-sax": GeneralMidiProgram.TENOR_SAX,
-    "baritone-sax": GeneralMidiProgram.BARITONE_SAX,
-    "oboe": GeneralMidiProgram.OBOE,
-    "english-horn": GeneralMidiProgram.ENGLISH_HORN,
-    "bassoon": GeneralMidiProgram.BASSOON,
-    "clarinet": GeneralMidiProgram.CLARINET,
-    # Pipe
-    "piccolo": GeneralMidiProgram.PICCOLO,
-    "flute": GeneralMidiProgram.FLUTE,
-    "recorder": GeneralMidiProgram.RECORDER,
-    "pan-flute": GeneralMidiProgram.PAN_FLUTE,
     "blown-bottle": GeneralMidiProgram.BLOWN_BOTTLE,
-    "shakuhachi": GeneralMidiProgram.SHAKUHACHI,
-    "whistle": GeneralMidiProgram.WHISTLE,
-    "ocarina": GeneralMidiProgram.OCARINA,
-    # Synth
-    "midi-synth-pad-new-age": GeneralMidiProgram.PAD_1_NEW_AGE,
 }
+
+# Mapping from Alda instrument names to GM program numbers.
+# Canonical names win over legacy aliases where the two disagree.
+INSTRUMENT_PROGRAMS: dict[str, int] = {
+    **LEGACY_INSTRUMENT_ALIASES,
+    **_CANONICAL_PROGRAMS,
+}
+
+
+def normalize_instrument_name(name: str) -> str:
+    """Normalize an instrument name for lookup (lowercase, hyphen separators)."""
+    return name.lower().replace("_", "-")
+
+
+def lookup_instrument(name: str) -> int | None:
+    """Resolve an instrument name to a General MIDI program number.
+
+    Args:
+        name: Instrument name as written in the score.
+
+    Returns:
+        The GM program number, or None if the name is not recognised.
+        Percussion names return None: they select channel 9 rather than a
+        program (see ``is_percussion``).
+    """
+    return INSTRUMENT_PROGRAMS.get(normalize_instrument_name(name))
+
+
+def is_percussion(name: str) -> bool:
+    """Return True if the instrument name selects the MIDI percussion channel."""
+    return normalize_instrument_name(name) in PERCUSSION_NAMES
 
 
 @dataclass

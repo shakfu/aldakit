@@ -2,9 +2,7 @@
 
 import argparse
 import builtins
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,7 +14,6 @@ from aldakit.cli import (
     read_source,
     transcribe_command,
     main,
-    _add_play_arguments,
     _resolve_port_specifier,
     _resolve_output_port,
     _resolve_input_port,
@@ -885,7 +882,7 @@ class TestMainAudioBackend:
     """Tests for main function with audio backend."""
 
     def test_audio_no_soundfont_error(self, monkeypatch, tmp_path, capsys):
-        """Test error when audio requested but no soundfont."""
+        """Audio requested with no SoundFont configured *or* discoverable."""
 
         class DummyBackend:
             def list_output_ports(self):
@@ -894,6 +891,11 @@ class TestMainAudioBackend:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
         # Clear any environment soundfont
         monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)
+        # ...and any SoundFont installed on the machine running the tests,
+        # otherwise this assertion depends on the developer's setup.
+        monkeypatch.setattr(
+            "aldakit.midi.soundfont.find_soundfont", lambda: None
+        )
 
         test_file = tmp_path / "test.alda"
         test_file.write_text("piano: c d e")
@@ -902,7 +904,48 @@ class TestMainAudioBackend:
         assert result == 1
 
         err = capsys.readouterr().err
-        assert "No soundfont configured" in err
+        assert "No SoundFont found" in err
+
+    def test_audio_uses_discovered_soundfont(self, monkeypatch, tmp_path, capsys):
+        """-a succeeds when a SoundFont can be found, without configuration."""
+        from pathlib import Path as _Path
+
+        class DummyBackend:
+            def list_output_ports(self):
+                return ["TestPort"]
+
+        class DummyTsfBackend:
+            def __init__(self, soundfont=None, **kwargs):
+                DummyTsfBackend.soundfont_used = soundfont
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def play(self, sequence):
+                return 0
+
+            def wait(self, *a, **k):
+                return None
+
+            def stop(self):
+                return None
+
+        monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
+        monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)
+        monkeypatch.setattr(
+            "aldakit.midi.soundfont.find_soundfont", lambda: _Path("/sf/found.sf2")
+        )
+        monkeypatch.setattr("aldakit.midi.backends.TsfBackend", DummyTsfBackend)
+        monkeypatch.setattr("aldakit.midi.backends.HAS_TSF", True)
+
+        test_file = tmp_path / "test.alda"
+        test_file.write_text("piano: c d e")
+
+        assert main(["play", str(test_file), "-a"]) == 0
+        assert DummyTsfBackend.soundfont_used == "/sf/found.sf2"
 
     def test_audio_with_soundfont(self, monkeypatch, tmp_path, capsys):
         """Test audio playback with soundfont."""
@@ -976,7 +1019,7 @@ class TestMainRepl:
         assert run_repl_called
 
     def test_repl_audio_no_soundfont_error(self, monkeypatch, capsys):
-        """Test REPL with audio but no soundfont configured."""
+        """REPL with audio but no SoundFont configured or discoverable."""
 
         class DummyBackend:
             def list_output_ports(self):
@@ -984,12 +1027,15 @@ class TestMainRepl:
 
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
         monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)
+        monkeypatch.setattr(
+            "aldakit.midi.soundfont.find_soundfont", lambda: None
+        )
 
         result = main(["repl", "-a"])
         assert result == 1
 
         err = capsys.readouterr().err
-        assert "No soundfont configured" in err
+        assert "No SoundFont found" in err
 
 
 class TestTranscribeCommand:

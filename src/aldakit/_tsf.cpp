@@ -56,6 +56,17 @@ struct ScheduledProgram {
 };
 
 /**
+ * A scheduled MIDI control change event.
+ */
+struct ScheduledControl {
+    int channel;
+    int control;
+    int value;
+    double time;
+    bool applied;
+};
+
+/**
  * TinySoundFont player with miniaudio backend.
  *
  * Provides scheduled MIDI playback with direct audio output.
@@ -64,6 +75,7 @@ class TsfPlayer {
 public:
     static constexpr int SAMPLE_RATE = 44100;
     static constexpr float TAIL_SECONDS = 0.5f;  // Release tail after last note
+    static constexpr int DRUM_CHANNEL = 9;       // General MIDI percussion channel
 
     TsfPlayer()
         : tsf_(nullptr)
@@ -162,6 +174,20 @@ public:
     }
 
     /**
+     * Schedule a MIDI control change (pan, volume, expression, ...).
+     */
+    void schedule_control(int channel, int control, int value, double time) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ScheduledControl cc;
+        cc.channel = channel;
+        cc.control = control;
+        cc.value = value;
+        cc.time = time;
+        cc.applied = false;
+        scheduled_controls_.push_back(cc);
+    }
+
+    /**
      * Schedule a note.
      */
     void schedule_note(int channel, int key, float velocity,
@@ -185,6 +211,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         scheduled_notes_.clear();
         scheduled_programs_.clear();
+        scheduled_controls_.clear();
         current_time_ = 0.0;
     }
 
@@ -234,7 +261,13 @@ public:
             for (auto& pc : scheduled_programs_) {
                 pc.applied = false;
             }
+            for (auto& cc : scheduled_controls_) {
+                cc.applied = false;
+            }
             tsf_reset(tsf_);
+            // General MIDI reserves channel 10 (9 zero-indexed) for percussion,
+            // where note numbers select drums from bank 128.
+            tsf_channel_set_bank_preset(tsf_, DRUM_CHANNEL, 128, 0);
         }
 
         playing_ = true;
@@ -299,8 +332,18 @@ private:
             // Apply program changes
             for (auto& pc : scheduled_programs_) {
                 if (!pc.applied && current_time_ >= pc.time) {
-                    tsf_channel_set_presetindex(tsf_, pc.channel, pc.program);
+                    if (pc.channel != DRUM_CHANNEL) {
+                        tsf_channel_set_presetindex(tsf_, pc.channel, pc.program);
+                    }
                     pc.applied = true;
+                }
+            }
+
+            // Apply control changes
+            for (auto& cc : scheduled_controls_) {
+                if (!cc.applied && current_time_ >= cc.time) {
+                    tsf_channel_midi_control(tsf_, cc.channel, cc.control, cc.value);
+                    cc.applied = true;
                 }
             }
 
@@ -346,6 +389,7 @@ private:
 
     std::vector<ScheduledNote> scheduled_notes_;
     std::vector<ScheduledProgram> scheduled_programs_;
+    std::vector<ScheduledControl> scheduled_controls_;
     mutable std::mutex mutex_;
 };
 
@@ -372,6 +416,9 @@ NB_MODULE(_tsf, m) {
         .def("schedule_program", &TsfPlayer::schedule_program,
              "channel"_a, "program"_a, "time"_a,
              "Schedule a program change.")
+        .def("schedule_control", &TsfPlayer::schedule_control,
+             "channel"_a, "control"_a, "value"_a, "time"_a,
+             "Schedule a MIDI control change (e.g. control 10 for pan)")
         .def("schedule_note", &TsfPlayer::schedule_note,
              "channel"_a, "key"_a, "velocity"_a, "start_time"_a, "duration"_a,
              "Schedule a note (velocity 0.0-1.0, times in seconds).")

@@ -47,15 +47,17 @@ from .midi import (
 from .midi.transcriber import list_input_ports, transcribe
 from .parser import Parser, parse
 from .scanner import Scanner
-from .score import Score
+from .score import PlaybackHandle, Score
+from .serialize import AldaWriter, write_alda
 from .tokens import SourcePosition, Token, TokenType
 
-__version__ = "0.1.10"
+__version__ = "0.2.0"
 
 
 __all__ = [
     # High-level API
     "Score",
+    "PlaybackHandle",
     "play",
     "play_file",
     "save",
@@ -63,8 +65,10 @@ __all__ = [
     "list_ports",
     "transcribe",
     "list_input_ports",
-    # Convenience function
+    # Convenience functions
     "parse",
+    "write_alda",
+    "AldaWriter",
     # Core classes
     "Token",
     "TokenType",

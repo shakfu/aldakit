@@ -6,7 +6,7 @@ endef
 
 .PHONY: all sync resync build test clean format lint typecheck check  \
 		reset publish publish-test assets fullcheck wheel release \
-		coverage test-review
+		coverage test-review golden instruments generated
 
 all: sync
 
@@ -30,13 +30,24 @@ release:
 	@uv build --wheel --python 3.14
 
 test:
-	@uv run pytest tests/ -v
+	@uv run python -m pytest tests/ -v
 
 test-review:
-	@uv run pytest --review tests/
+	@uv run python -m pytest --review tests/
 
 coverage:
-	@uv run pytest --cov-report term-missing:skip-covered --cov=src/aldakit tests/
+	@uv run python -m pytest --cov-report term-missing:skip-covered --cov=src/aldakit tests/
+
+# Regenerate the committed instrument table from the language docs.
+instruments:
+	@uv run python scripts/gen_instruments.py
+
+# Regenerate the golden MIDI fixtures. Review the diff: it shows exactly which
+# notes changed, so an unintended change to how a score sounds is not silent.
+golden:
+	@uv run python scripts/gen_golden_midi.py
+
+generated: instruments golden
 
 
 

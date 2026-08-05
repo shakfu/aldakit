@@ -1,10 +1,7 @@
 """Tests for SoundFont management utilities."""
 
-import os
 import hashlib
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -215,7 +212,9 @@ class TestSoundFontManager:
         def mock_sha256(path):
             return SOUNDFONT_CATALOG["TimGM6mb"]["sha256"]
 
-        monkeypatch.setattr(SoundFontManager, "_download_file", staticmethod(mock_download))
+        monkeypatch.setattr(
+            SoundFontManager, "_download_file", staticmethod(mock_download)
+        )
         monkeypatch.setattr(SoundFontManager, "_file_sha256", staticmethod(mock_sha256))
 
         manager = SoundFontManager(soundfont_dir=tmp_path)

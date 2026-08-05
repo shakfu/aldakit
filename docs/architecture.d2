@@ -19,9 +19,9 @@ py-api -> ast: to_ast()
 py-api -> alda: to_alda()
 midi-in -> ast: transcribe()
 
-ast -> alda: export()
+ast -> alda: write_alda()
 ast -> midi-out: play()
 ast -> audio-out: play(backend="audio")
 ast -> midi-file: save()
 
-midi-file -> ast: import()
+midi-file -> ast: from_midi_file()

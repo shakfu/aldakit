@@ -6,6 +6,7 @@ without requiring an external synthesizer like FluidSynth.
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -78,9 +79,11 @@ class TsfBackend(MidiBackend):
         self._player = _tsf.TsfPlayer()  # type: ignore[union-attr]
         self._soundfont_path: Path | None = None
 
-        # Find SoundFont
+        # Find SoundFont. Paths may come from a config file, an environment
+        # variable or the command line, so "~" and $VARS are expanded here as
+        # they are for the config file.
         if soundfont is not None:
-            sf_path = Path(soundfont)
+            sf_path = Path(os.path.expandvars(os.path.expanduser(str(soundfont))))
         else:
             sf_path = find_soundfont()
 
@@ -136,6 +139,10 @@ class TsfBackend(MidiBackend):
         # Schedule program changes
         for pc in sequence.program_changes:
             self._player.schedule_program(pc.channel, pc.program, pc.time)
+
+        # Schedule control changes (panning, expression, ...)
+        for cc in sequence.control_changes:
+            self._player.schedule_control(cc.channel, cc.control, cc.value, cc.time)
 
         # Schedule notes
         for note in sequence.notes:

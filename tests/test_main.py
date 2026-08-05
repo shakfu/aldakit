@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-from unittest.mock import patch
 
 import pytest
 
@@ -76,3 +75,38 @@ class TestMainImport:
         with pytest.raises(SystemExit) as exc_info:
             main(["--version"])
         assert exc_info.value.code == 0
+
+
+class TestVersion:
+    """The version is declared in two places; keep them from drifting."""
+
+    def test_package_and_metadata_agree(self):
+        """__version__ must match the version pip/uv installed."""
+        from importlib.metadata import version
+
+        import aldakit
+
+        assert aldakit.__version__ == version("aldakit")
+
+    def test_pyproject_agrees(self):
+        """__version__ must match pyproject.toml, the build's source of truth."""
+        import re
+        from pathlib import Path
+
+        import aldakit
+
+        pyproject = Path(__file__).parent.parent / "pyproject.toml"
+        declared = re.search(r'^version = "([^"]+)"', pyproject.read_text(), re.M)
+        assert declared, "no version in pyproject.toml"
+        assert aldakit.__version__ == declared.group(1)
+
+    def test_changelog_documents_this_version(self):
+        """A release must have a CHANGELOG section."""
+        from pathlib import Path
+
+        import aldakit
+
+        changelog = (Path(__file__).parent.parent / "CHANGELOG.md").read_text()
+        assert f"## [{aldakit.__version__}]" in changelog, (
+            f"CHANGELOG.md has no section for {aldakit.__version__}"
+        )
