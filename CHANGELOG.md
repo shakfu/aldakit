@@ -110,6 +110,13 @@ they survived a passing test suite.
   disagreed), and it uses SoundFont discovery. When audio genuinely is not
   possible, the virtual-port fallback now warns that nothing will be heard.
 
+- **Alda files with non-ASCII characters no longer fail on Windows.**
+  `cli.read_source()` called `read_text()` with no encoding, so Python used the
+  locale codepage (cp1252 on Windows) and any non-ASCII character in a score
+  raised `UnicodeDecodeError`. Every other read in the codebase already said
+  UTF-8. Found by the first Windows CI run; `tests/test_docs.py` now fails if
+  any text IO in `src/` omits its encoding.
+
 - **`TsfBackend` expands `~` and `$VARS` in SoundFont paths.** The config file
   expanded them but the backend did not, so the documented
   `TsfBackend(soundfont="~/Music/sf2/FluidR3_GM.sf2")` raised

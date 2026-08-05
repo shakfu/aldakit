@@ -42,6 +42,15 @@ def config(**overrides) -> Config:
     return Config(**overrides)
 
 
+def native(posix_path: str) -> str:
+    """Render a POSIX-style test path the way the platform would.
+
+    resolve_backend() returns ``str(Path(...))``, so on Windows the separators
+    are backslashes. Comparing against a hardcoded "/sf/found.sf2" fails there.
+    """
+    return str(Path(posix_path))
+
+
 class Env:
     """Patches the three things resolve_backend() consults."""
 
@@ -79,14 +88,14 @@ class TestNoMidiPorts:
         with Env(ports=[], discovered="/sf/found.sf2"):
             choice = resolve_backend(args(), config(), None)
         assert choice.use_audio
-        assert choice.soundfont == "/sf/found.sf2"
+        assert choice.soundfont == native("/sf/found.sf2")
         assert choice.error is None
 
     def test_configured_soundfont_wins_over_discovery(self):
         with Env(ports=[], discovered="/sf/found.sf2"):
             choice = resolve_backend(args(), config(soundfont="/sf/configured.sf2"), None)
         assert choice.use_audio
-        assert choice.soundfont == "/sf/configured.sf2"
+        assert choice.soundfont == native("/sf/configured.sf2")
 
     def test_no_soundfont_falls_back_to_midi(self):
         """With nothing to synthesize with, the virtual port is all there is."""
@@ -125,7 +134,7 @@ class TestExplicitAudioRequest:
         with Env(ports=["IAC Driver Bus 1"], discovered="/sf/found.sf2"):
             choice = resolve_backend(args(audio=True), config(), None)
         assert choice.use_audio
-        assert choice.soundfont == "/sf/found.sf2"
+        assert choice.soundfont == native("/sf/found.sf2")
         assert choice.error is None
 
     def test_dash_sf_selects_audio_with_that_file(self):
@@ -175,7 +184,7 @@ class TestAllSubcommandsAgree:
         with Env(ports=[], discovered="/sf/found.sf2"):
             choice = resolve_backend(parsed, config(), None)
         assert choice.use_audio
-        assert choice.soundfont == "/sf/found.sf2"
+        assert choice.soundfont == native("/sf/found.sf2")
 
     @pytest.mark.parametrize("argv", [["play", "x.alda", "-a"], ["eval", "piano: c", "-a"], ["repl", "-a"]])
     def test_dash_a_works_for_every_subcommand(self, argv):
@@ -206,7 +215,7 @@ class TestSilentVirtualPortWarning:
         from aldakit.cli import main
 
         source = tmp_path / "s.alda"
-        source.write_text("piano: c")
+        source.write_text("piano: c", encoding="utf-8")
 
         with Env(ports=[], discovered=None):
             self._silent_midi_backend()
@@ -223,7 +232,7 @@ class TestSilentVirtualPortWarning:
         from aldakit.cli import main
 
         source = tmp_path / "s.alda"
-        source.write_text("piano: c")
+        source.write_text("piano: c", encoding="utf-8")
 
         with Env(ports=[], discovered="/sf/found.sf2"):
             tsf = patch("aldakit.midi.backends.TsfBackend").start()

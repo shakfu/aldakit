@@ -105,7 +105,7 @@ class TestOutputToFile:
 
     def test_play_writes_midi(self, tmp_path):
         source = tmp_path / "s.alda"
-        source.write_text("piano: c d e")
+        source.write_text("piano: c d e", encoding="utf-8")
         out = tmp_path / "out.mid"
         assert main(["play", str(source), "-o", str(out)]) == 0
         assert out.exists()

@@ -219,7 +219,7 @@ class TestExampleFilesRespectDrumChannel:
     @pytest.mark.parametrize("path", _example_files(), ids=lambda p: p.name)
     def test_drum_channel_holds_only_percussion(self, path):
         """Channel 9 is used by percussion parts and by nothing else."""
-        generator, sequence = generate(path.read_text())
+        generator, sequence = generate(path.read_text(encoding="utf-8"))
 
         percussion_channels = {
             state.channel
@@ -251,10 +251,10 @@ class TestExampleFilesRespectDrumChannel:
     )
     def test_purely_melodic_example_avoids_drum_channel(self, filename):
         """Scores with no percussion part must not touch channel 9 at all."""
-        _, sequence = generate((EXAMPLES / filename).read_text())
+        _, sequence = generate((EXAMPLES / filename).read_text(encoding="utf-8"))
         assert MIDI_DRUM_CHANNEL not in {n.channel for n in sequence.notes}
 
     def test_percussion_example_uses_drum_channel(self):
         path = EXAMPLES / "percussion.alda"
-        _, sequence = generate(path.read_text())
+        _, sequence = generate(path.read_text(encoding="utf-8"))
         assert {n.channel for n in sequence.notes} == {MIDI_DRUM_CHANNEL}

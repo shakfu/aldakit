@@ -400,7 +400,7 @@ class TestExampleFilesPlayback:
 
         # Load and parse duet.alda
         duet_path = Path(__file__).parent.parent / "examples" / "duet.alda"
-        source = duet_path.read_text()
+        source = duet_path.read_text(encoding="utf-8")
         ast = parse(source, str(duet_path))
         sequence = generate_midi(ast)
 

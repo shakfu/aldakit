@@ -391,7 +391,7 @@ class TestScoreMidiImport:
         score.save(alda_path)
 
         assert alda_path.exists()
-        content = alda_path.read_text()
+        content = alda_path.read_text(encoding="utf-8")
         assert len(content) > 0
 
     def test_save_imported_as_midi(self, tmp_path):

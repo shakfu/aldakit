@@ -73,7 +73,7 @@ def parse_expected_file(path: Path) -> ExpectedOutput:
     control_changes = []
     tempos = []
 
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -121,7 +121,7 @@ def parse_expected_file(path: Path) -> ExpectedOutput:
 
 def parse_and_generate(alda_file: Path):
     """Parse an Alda file and generate MIDI sequence."""
-    text = alda_file.read_text()
+    text = alda_file.read_text(encoding="utf-8")
     ast = parse(text)
     return generate_midi(ast)
 
@@ -430,7 +430,7 @@ class TestAllFilesValidation:
         errors = []
         for alda_file in all_test_files:
             try:
-                parse(alda_file.read_text())
+                parse(alda_file.read_text(encoding="utf-8"))
             except Exception as e:
                 errors.append((alda_file.name, str(e)))
         assert not errors, f"Parse errors: {errors}"

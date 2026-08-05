@@ -193,20 +193,20 @@ class TestRoundTripCorpus:
         "path", sorted(EXAMPLES.glob("*.alda")), ids=lambda p: p.name
     )
     def test_example_round_trips(self, path):
-        assert_round_trips(path.read_text(), path.name)
+        assert_round_trips(path.read_text(encoding="utf-8"), path.name)
 
     @pytest.mark.parametrize(
         "path", sorted(SHARED_SUITE.glob("*.alda")), ids=lambda p: p.name
     )
     def test_shared_suite_round_trips(self, path):
-        assert_round_trips(path.read_text(), path.name)
+        assert_round_trips(path.read_text(encoding="utf-8"), path.name)
 
     @pytest.mark.parametrize(
         "path", sorted(EXAMPLES.glob("*.alda")), ids=lambda p: p.name
     )
     def test_round_trip_is_idempotent(self, path):
         """Writing twice produces the same text as writing once."""
-        once = write_alda(parse(path.read_text(), path.name))
+        once = write_alda(parse(path.read_text(encoding="utf-8"), path.name))
         twice = write_alda(parse(once, path.name))
         assert twice == once
 
@@ -217,7 +217,7 @@ class TestScoreIntegration:
 
         out = tmp_path / "out.alda"
         Score("piano: {c d e}2").save(out)
-        assert out.read_text() == "piano: {c d e}2"
+        assert out.read_text(encoding="utf-8") == "piano: {c d e}2"
 
     def test_deprecated_helper_still_works(self):
         from aldakit.score import _ast_to_alda

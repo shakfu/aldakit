@@ -20,7 +20,7 @@ class TestScore:
 
     def test_create_from_file(self, tmp_path):
         alda_file = tmp_path / "test.alda"
-        alda_file.write_text("piano: c d e f g")
+        alda_file.write_text("piano: c d e f g", encoding="utf-8")
 
         score = Score.from_file(alda_file)
         assert score.source == "piano: c d e f g"
@@ -413,7 +413,7 @@ class TestScoreFromMidi:
     def test_from_file_unknown_extension(self, tmp_path):
         """from_file handles unknown extensions as Alda."""
         test_file = tmp_path / "test.txt"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         score = Score.from_file(test_file)
 
@@ -443,7 +443,7 @@ class TestScoreSave:
         score.save(alda_path)
 
         assert alda_path.exists()
-        content = alda_path.read_text()
+        content = alda_path.read_text(encoding="utf-8")
         assert "piano" in content
 
     def test_save_unknown_extension(self, tmp_path):

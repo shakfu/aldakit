@@ -296,7 +296,7 @@ class TestScoreAudioBackend:
         """Test playing duet.alda with TinySoundFont audio synthesis."""
         # Load and play duet.alda - tests multi-instrument audio synthesis
         duet_path = Path(__file__).parent.parent / "examples" / "duet.alda"
-        source = duet_path.read_text()
+        source = duet_path.read_text(encoding="utf-8")
 
         score = Score(source)
 

@@ -118,7 +118,7 @@ class TestGetConfigPaths:
     def test_finds_local_config(self, tmp_path, monkeypatch):
         # Create local config
         config_file = tmp_path / "aldakit.ini"
-        config_file.write_text("[aldakit]\ntempo = 100\n")
+        config_file.write_text("[aldakit]\ntempo = 100\n", encoding="utf-8")
 
         monkeypatch.chdir(tmp_path)
         paths = get_config_paths()
@@ -129,7 +129,7 @@ class TestGetConfigPaths:
         aldakit_dir = tmp_path / ".aldakit"
         aldakit_dir.mkdir()
         config_file = aldakit_dir / "config.ini"
-        config_file.write_text("[aldakit]\nport = TestPort\n")
+        config_file.write_text("[aldakit]\nport = TestPort\n", encoding="utf-8")
 
         # Mock home directory
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -144,10 +144,10 @@ class TestGetConfigPaths:
         aldakit_dir = tmp_path / ".aldakit"
         aldakit_dir.mkdir()
         user_config = aldakit_dir / "config.ini"
-        user_config.write_text("[aldakit]\nport = UserPort\n")
+        user_config.write_text("[aldakit]\nport = UserPort\n", encoding="utf-8")
 
         local_config = tmp_path / "aldakit.ini"
-        local_config.write_text("[aldakit]\nport = LocalPort\n")
+        local_config.write_text("[aldakit]\nport = LocalPort\n", encoding="utf-8")
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
@@ -170,7 +170,7 @@ backend = audio
 port = TestPort
 tempo = 140
 verbose = true
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
 
@@ -185,7 +185,7 @@ verbose = true
         config_file.write_text("""
 [aldakit]
 tempo = 100
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
 
@@ -203,7 +203,7 @@ tempo = 100
 [aldakit]
 tempo = 150
 port = MyPort
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
 
@@ -215,7 +215,7 @@ port = MyPort
         config_file.write_text("""
 [other]
 foo = bar
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
 
@@ -228,7 +228,7 @@ foo = bar
         config_file.write_text("""
 [aldakit]
 verbose = yes
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
         assert config.verbose is True
@@ -236,7 +236,7 @@ verbose = yes
         config_file.write_text("""
 [aldakit]
 verbose = no
-""")
+""", encoding="utf-8")
         config = Config()
         _load_file(config, config_file)
         assert config.verbose is False
@@ -267,7 +267,7 @@ class TestLoadConfig:
         config_file.write_text("""
 [aldakit]
 soundfont = /config/soundfont.sf2
-""")
+""", encoding="utf-8")
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
@@ -288,14 +288,14 @@ soundfont = /config/soundfont.sf2
 [aldakit]
 tempo = 100
 port = UserPort
-""")
+""", encoding="utf-8")
 
         # Create local config (should override)
         local_config = tmp_path / "aldakit.ini"
         local_config.write_text("""
 [aldakit]
 tempo = 200
-""")
+""", encoding="utf-8")
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)

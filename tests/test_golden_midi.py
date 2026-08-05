@@ -33,7 +33,7 @@ def golden() -> dict:
     assert GOLDEN_PATH.exists(), (
         f"{GOLDEN_PATH} is missing. Run: python scripts/gen_golden_midi.py"
     )
-    return json.loads(GOLDEN_PATH.read_text())
+    return json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
 
 
 def _examples():
@@ -63,7 +63,7 @@ class TestGoldenOutput:
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_example_matches_golden(self, path, golden):
         expected = golden[path.name]
-        actual = midi_fingerprint(generate_midi(parse(path.read_text(), str(path))))
+        actual = midi_fingerprint(generate_midi(parse(path.read_text(encoding="utf-8"), str(path))))
 
         # Compare event kinds separately so failures point at the right thing
         assert actual["program_changes"] == expected["program_changes"]
@@ -78,7 +78,7 @@ class TestGoldenInvariants:
 
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_pitches_and_velocities_in_range(self, path):
-        sequence = generate_midi(parse(path.read_text(), str(path)))
+        sequence = generate_midi(parse(path.read_text(encoding="utf-8"), str(path)))
         for note in sequence.notes:
             assert 0 <= note.pitch <= 127, f"pitch out of range: {note}"
             assert 0 <= note.velocity <= 127, f"velocity out of range: {note}"
@@ -86,21 +86,21 @@ class TestGoldenInvariants:
 
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_no_negative_or_zero_durations(self, path):
-        sequence = generate_midi(parse(path.read_text(), str(path)))
+        sequence = generate_midi(parse(path.read_text(encoding="utf-8"), str(path)))
         for note in sequence.notes:
             assert note.duration > 0, f"non-positive duration: {note}"
             assert note.start_time >= 0, f"negative start time: {note}"
 
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_programs_in_range(self, path):
-        sequence = generate_midi(parse(path.read_text(), str(path)))
+        sequence = generate_midi(parse(path.read_text(encoding="utf-8"), str(path)))
         for change in sequence.program_changes:
             assert 0 <= int(change.program) <= 127
 
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_generation_is_deterministic(self, path):
         """Two runs of the generator must agree."""
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
         first = midi_fingerprint(generate_midi(parse(source, str(path))))
         second = midi_fingerprint(generate_midi(parse(source, str(path))))
         assert first == second

@@ -156,15 +156,15 @@ class TestSerialization:
 
 class TestExampleFile:
     def test_dot_accessor_example_has_no_diagnostics(self):
-        generator, _ = generate((EXAMPLES / "dot_accessor.alda").read_text())
+        generator, _ = generate((EXAMPLES / "dot_accessor.alda").read_text(encoding="utf-8"))
         assert generator.diagnostics == []
 
     def test_dot_accessor_example_uses_three_parts(self):
-        generator, _ = generate((EXAMPLES / "dot_accessor.alda").read_text())
+        generator, _ = generate((EXAMPLES / "dot_accessor.alda").read_text(encoding="utf-8"))
         assert len(generator.state.parts) == 3
 
     def test_dot_accessor_example_channels(self):
         """Four notes across three channels, not four."""
-        _, sequence = generate((EXAMPLES / "dot_accessor.alda").read_text())
+        _, sequence = generate((EXAMPLES / "dot_accessor.alda").read_text(encoding="utf-8"))
         assert len(sequence.notes) == 4
         assert sorted({n.channel for n in sequence.notes}) == [0, 1, 2]

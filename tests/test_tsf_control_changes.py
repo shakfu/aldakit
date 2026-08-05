@@ -110,10 +110,20 @@ class TestSoundFontPathExpansion:
     """The config file expanded ~ but the backend did not, so a documented
     ``TsfBackend(soundfont="~/Music/sf2/...")`` raised FileNotFoundError."""
 
+    @staticmethod
+    def _set_home(monkeypatch, path):
+        """Point ``~`` at ``path`` on every platform.
+
+        os.path.expanduser() reads HOME on POSIX but USERPROFILE on Windows,
+        so setting only HOME silently does nothing there.
+        """
+        monkeypatch.setenv("HOME", str(path))
+        monkeypatch.setenv("USERPROFILE", str(path))
+
     def test_tilde_is_expanded(self, tmp_path, monkeypatch):
         from aldakit.midi.backends.tsf_backend import TsfBackend
 
-        monkeypatch.setenv("HOME", str(tmp_path))
+        self._set_home(monkeypatch, tmp_path)
         sf = tmp_path / "fake.sf2"
         sf.write_bytes(b"not a real soundfont")
 
@@ -126,7 +136,7 @@ class TestSoundFontPathExpansion:
     def test_missing_file_reports_the_expanded_path(self, tmp_path, monkeypatch):
         from aldakit.midi.backends.tsf_backend import TsfBackend
 
-        monkeypatch.setenv("HOME", str(tmp_path))
+        self._set_home(monkeypatch, tmp_path)
         with pytest.raises(FileNotFoundError) as excinfo:
             TsfBackend(soundfont="~/nope.sf2")
         assert str(tmp_path) in str(excinfo.value)

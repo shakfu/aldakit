@@ -50,7 +50,7 @@ def doc_files() -> list[Path]:
 def code_blocks(path: Path):
     """Yield (language, code, line_number) for each fenced block."""
     lang, buf, start = None, [], 0
-    for i, line in enumerate(path.read_text().splitlines(), 1):
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = FENCE.match(line)
         if match and lang is None:
             lang, buf, start = match.group(1) or "text", [], i
@@ -71,7 +71,7 @@ def test_documented_imports_resolve(path: Path):
     if UPSTREAM in str(path):
         pytest.skip("upstream Alda language docs")
 
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     broken: list[str] = []
 
     for match in re.finditer(r"from (aldakit[\w.]*) import ([^\n(]+|\([^)]*\))", text):
@@ -144,7 +144,7 @@ def test_documented_cli_invocations_are_accepted(path: Path):
 class TestReadmeAccuracy:
     """Specific README claims that were wrong and are worth pinning."""
 
-    README = (ROOT / "README.md").read_text()
+    README = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_voicing_example_is_accurate(self):
         """README documents voicing(major("c"), [3, 4, 5]) as C3 E4 G5."""
@@ -173,3 +173,76 @@ class TestReadmeAccuracy:
         """`aldakit FILE` without a subcommand no longer works."""
         stale = re.findall(r"^aldakit ([\w./-]+\.alda)", self.README, re.M)
         assert stale == [], f"README uses the removed CLI form: {stale}"
+
+
+class TestTextIOSpecifiesEncoding:
+    """Production text IO must name its encoding.
+
+    Windows CI failed because `cli.py` read Alda sources with `read_text()`.
+    Python then uses the locale codepage (cp1252), so any non-ASCII character
+    in a score raises UnicodeDecodeError there while working fine on
+    macOS/Linux. Every text read and write in `src/` must say UTF-8.
+    """
+
+    SRC = ROOT / "src" / "aldakit"
+
+    def _source_files(self):
+        return [
+            p
+            for p in self.SRC.rglob("*.py")
+            # Vendored prompt_toolkit is not ours to change
+            if "ext" not in p.relative_to(self.SRC).parts
+        ]
+
+    def test_source_files_found(self):
+        assert len(self._source_files()) > 10
+
+    @staticmethod
+    def _call_arguments(text: str, start: int) -> tuple[str, int]:
+        """Return the argument text of a call whose '(' is at ``start``.
+
+        Nested calls mean a naive ``[^)]*`` regex stops at the wrong paren, so
+        the parentheses are matched properly.
+        """
+        depth, i = 1, start + 1
+        while i < len(text) and depth:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        return text[start + 1 : i - 1], i
+
+    def test_no_unqualified_text_io(self):
+        offenders = []
+        for path in self._source_files():
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"\.(read_text|write_text)\(", text):
+                args, _ = self._call_arguments(text, match.end() - 1)
+                if "encoding=" not in args:
+                    lineno = text.count("\n", 0, match.start()) + 1
+                    offenders.append(
+                        f"{path.relative_to(ROOT)}:{lineno}: .{match.group(1)}({args})"
+                    )
+        assert offenders == [], (
+            "text IO without an explicit encoding fails on Windows:\n"
+            + "\n".join(offenders)
+        )
+
+    def test_project_text_files_are_utf8(self):
+        """Docs and examples must decode as UTF-8, since that is what we read."""
+        targets = (
+            list((ROOT / "docs").rglob("*.md"))
+            + list((ROOT / "examples").glob("*.alda"))
+            + list((ROOT / "tests" / "shared_suite").glob("*.alda"))
+            + [ROOT / "README.md", ROOT / "CHANGELOG.md", ROOT / "TODO.md"]
+        )
+        bad = []
+        for path in targets:
+            if not path.exists():
+                continue
+            try:
+                path.read_bytes().decode("utf-8")
+            except UnicodeDecodeError as e:
+                bad.append(f"{path.relative_to(ROOT)}: {e}")
+        assert bad == []

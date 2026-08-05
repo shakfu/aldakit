@@ -196,7 +196,7 @@ class TestExampleFiles:
 
     def test_all_instruments_example_uses_distinct_programs(self):
         """examples/all-instruments.alda must reach all 128 GM programs."""
-        source = (EXAMPLES / "all-instruments.alda").read_text()
+        source = (EXAMPLES / "all-instruments.alda").read_text(encoding="utf-8")
         sequence = generate_midi(parse(source))
         programs = {int(pc.program) for pc in sequence.program_changes}
         # 128 melodic programs; midi-percussion emits no program change.
@@ -209,7 +209,7 @@ class TestExampleFiles:
         offenders = {}
         for path in sorted(EXAMPLES.glob("*.alda")):
             generator = MidiGenerator()
-            generator.generate(parse(path.read_text(), str(path)))
+            generator.generate(parse(path.read_text(encoding="utf-8"), str(path)))
             unknown = [
                 str(d)
                 for d in generator.diagnostics

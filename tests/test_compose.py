@@ -487,7 +487,7 @@ class TestScoreFromElements:
         output = tmp_path / "test.alda"
         score.save(output)
         assert output.exists()
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert "piano:" in content
 
     def test_save_midi(self, tmp_path):

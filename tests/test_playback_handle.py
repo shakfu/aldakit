@@ -227,7 +227,7 @@ class TestApiFunctions:
         import aldakit
 
         path = tmp_path / "song.alda"
-        path.write_text("piano: c d e")
+        path.write_text("piano: c d e", encoding="utf-8")
         backend = FakeBackend()
         with patch.object(Score, "_make_backend", return_value=backend):
             handle = aldakit.play_file(path, wait=False)

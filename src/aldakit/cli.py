@@ -597,7 +597,9 @@ def read_source(args: argparse.Namespace) -> tuple[str, str]:
         )
         sys.exit(1)
 
-    return file_arg.read_text(), str(file_arg)
+    # Alda sources are UTF-8. Without this, Windows decodes with the locale
+    # codepage and any non-ASCII character raises UnicodeDecodeError.
+    return file_arg.read_text(encoding="utf-8"), str(file_arg)
 
 
 def _resolve_port_specifier(

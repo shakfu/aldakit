@@ -31,11 +31,11 @@ def main() -> int:
     golden: dict[str, dict] = {}
 
     for path in sorted(EXAMPLES.glob("*.alda")):
-        sequence = generate_midi(parse(path.read_text(), str(path)))
+        sequence = generate_midi(parse(path.read_text(encoding="utf-8"), str(path)))
         golden[path.name] = midi_fingerprint(sequence)
 
     out = GOLDEN_DIR / "examples.json"
-    out.write_text(json.dumps(golden, indent=1, sort_keys=True) + "\n")
+    out.write_text(json.dumps(golden, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
     note_count = sum(len(v["notes"]) for v in golden.values())
     print(f"Wrote {out}: {len(golden)} examples, {note_count} notes")

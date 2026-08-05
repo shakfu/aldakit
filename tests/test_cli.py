@@ -404,7 +404,7 @@ class TestReadSource:
     def test_read_from_file(self, tmp_path):
         """Read source from file."""
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e f g")
+        test_file.write_text("piano: c d e f g", encoding="utf-8")
 
         args = argparse.Namespace(eval=None, file=test_file)
         source, filename = read_source(args)
@@ -651,7 +651,7 @@ class TestMain:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         result = main(["play", str(test_file), "--parse-only"])
         assert result == 0
@@ -677,7 +677,7 @@ class TestMain:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
         output_file = tmp_path / "output.mid"
 
         result = main(["play", str(test_file), "-o", str(output_file)])
@@ -696,7 +696,7 @@ class TestMain:
 
         # Empty file produces no notes
         test_file = tmp_path / "empty.alda"
-        test_file.write_text("# Just a comment")
+        test_file.write_text("# Just a comment", encoding="utf-8")
 
         result = main(["play", str(test_file)])
         assert result == 0
@@ -714,7 +714,7 @@ class TestMain:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
 
         test_file = tmp_path / "invalid.alda"
-        test_file.write_text("piano: ((((invalid")
+        test_file.write_text("piano: ((((invalid", encoding="utf-8")
 
         result = main(["play", str(test_file)])
         assert result == 1
@@ -750,7 +750,7 @@ class TestMain:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         result = main(["play", str(test_file), "-v"])
         assert result == 0
@@ -869,7 +869,7 @@ class TestMain:
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         result = main(["play", str(test_file), "--no-wait"])
         assert result == 0
@@ -898,7 +898,7 @@ class TestMainAudioBackend:
         )
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         result = main(["play", str(test_file), "-a"])
         assert result == 1
@@ -942,10 +942,12 @@ class TestMainAudioBackend:
         monkeypatch.setattr("aldakit.midi.backends.HAS_TSF", True)
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         assert main(["play", str(test_file), "-a"]) == 0
-        assert DummyTsfBackend.soundfont_used == "/sf/found.sf2"
+        # resolve_backend() returns str(Path(...)), so the separator is
+        # platform-native: backslashes on Windows.
+        assert DummyTsfBackend.soundfont_used == str(_Path("/sf/found.sf2"))
 
     def test_audio_with_soundfont(self, monkeypatch, tmp_path, capsys):
         """Test audio playback with soundfont."""
@@ -983,7 +985,7 @@ class TestMainAudioBackend:
         sf_file.write_bytes(b"fake sf2")
 
         test_file = tmp_path / "test.alda"
-        test_file.write_text("piano: c d e")
+        test_file.write_text("piano: c d e", encoding="utf-8")
 
         # Patch TsfBackend and HAS_TSF at the backends module level
         monkeypatch.setattr("aldakit.midi.backends.TsfBackend", DummyTsfBackend)

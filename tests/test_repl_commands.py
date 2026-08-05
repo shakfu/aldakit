@@ -30,6 +30,16 @@ from aldakit.repl import (
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
 
+def set_home(monkeypatch, path):
+    """Point ``~`` at ``path`` on every platform.
+
+    os.path.expanduser() reads HOME on POSIX but USERPROFILE on Windows, so
+    setting only HOME silently does nothing there.
+    """
+    monkeypatch.setenv("HOME", str(path))
+    monkeypatch.setenv("USERPROFILE", str(path))
+
+
 class FakeBackend:
     def __init__(self):
         self.stopped = False
@@ -110,13 +120,13 @@ class TestListDirectory:
         assert directories == ["songs/"]
 
     def test_skips_non_alda_files(self, in_tmp_dir):
-        (in_tmp_dir / "notes.txt").write_text("x")
-        (in_tmp_dir / "song.alda").write_text("piano: c")
+        (in_tmp_dir / "notes.txt").write_text("x", encoding="utf-8")
+        (in_tmp_dir / "song.alda").write_text("piano: c", encoding="utf-8")
         _, files = list_directory(in_tmp_dir)
         assert files == ["song.alda"]
 
     def test_skips_hidden_entries(self, in_tmp_dir):
-        (in_tmp_dir / ".hidden.alda").write_text("piano: c")
+        (in_tmp_dir / ".hidden.alda").write_text("piano: c", encoding="utf-8")
         _, files = list_directory(in_tmp_dir)
         assert files == []
 
@@ -189,7 +199,7 @@ class TestLoadCommand:
         assert not ctx.session.has_buffer
 
     def test_unparseable_file_reports_an_error(self, ctx, capsys, in_tmp_dir):
-        (in_tmp_dir / "bad.alda").write_text("piano: ((((")
+        (in_tmp_dir / "bad.alda").write_text("piano: ((((", encoding="utf-8")
         handle_command(ctx, ":load bad.alda")
         assert "Error" in capsys.readouterr().out
         assert not ctx.session.has_buffer, "a broken file must not become the buffer"
@@ -199,8 +209,8 @@ class TestLoadCommand:
         assert "Usage: :load" in capsys.readouterr().out
 
     def test_expands_user_home(self, ctx, capsys, monkeypatch, tmp_path):
-        monkeypatch.setenv("HOME", str(tmp_path))
-        (tmp_path / "tune.alda").write_text("piano: c d e")
+        set_home(monkeypatch, tmp_path)
+        (tmp_path / "tune.alda").write_text("piano: c d e", encoding="utf-8")
         handle_command(ctx, ":load ~/tune.alda")
         assert ctx.session.has_buffer
 
@@ -252,7 +262,7 @@ class TestSaveCommand:
         ctx.session.add("piano: c d e")
         target = tmp_path / "out.alda"
         handle_command(ctx, f":save {target}")
-        assert target.read_text().strip() == "piano: c d e"
+        assert target.read_text(encoding="utf-8").strip() == "piano: c d e"
         assert "Saved" in capsys.readouterr().out
 
     def test_saves_midi(self, ctx, tmp_path):
@@ -282,7 +292,7 @@ class TestSaveCommand:
         ctx.session.add("piano: c d e")
         target = tmp_path / "out.alda"
         handle_command(ctx, f":save {target}")
-        assert "(tempo" not in target.read_text()
+        assert "(tempo" not in target.read_text(encoding="utf-8")
 
     def test_multiple_entries_round_trip(self, ctx, tmp_path):
         from aldakit import Score
@@ -318,7 +328,7 @@ class TestNavigationCommands:
         assert Path.cwd() == in_tmp_dir
 
     def test_ls_lists_current_directory(self, ctx, capsys, in_tmp_dir):
-        (in_tmp_dir / "song.alda").write_text("piano: c")
+        (in_tmp_dir / "song.alda").write_text("piano: c", encoding="utf-8")
         handle_command(ctx, ":ls")
         assert "song.alda" in capsys.readouterr().out
 
@@ -332,7 +342,7 @@ class TestNavigationCommands:
 
     def test_load_after_cd_uses_the_new_directory(self, ctx, in_tmp_dir):
         (in_tmp_dir / "songs").mkdir()
-        (in_tmp_dir / "songs" / "tune.alda").write_text("piano: c d e")
+        (in_tmp_dir / "songs" / "tune.alda").write_text("piano: c d e", encoding="utf-8")
         handle_command(ctx, ":cd songs")
         handle_command(ctx, ":load tune.alda")
         assert ctx.session.has_buffer
@@ -436,11 +446,11 @@ class TestCompletion:
         assert ":load " in self._applied(":load")
 
     def test_completes_paths_after_load(self, in_tmp_dir):
-        (in_tmp_dir / "tune.alda").write_text("piano: c")
+        (in_tmp_dir / "tune.alda").write_text("piano: c", encoding="utf-8")
         assert ":load tune.alda" in self._applied(":load tu")
 
     def test_completes_paths_after_save(self, in_tmp_dir):
-        (in_tmp_dir / "tune.alda").write_text("piano: c")
+        (in_tmp_dir / "tune.alda").write_text("piano: c", encoding="utf-8")
         assert ":save tune.alda" in self._applied(":save tu")
 
     def test_completes_directories_after_cd(self, in_tmp_dir):
@@ -453,7 +463,7 @@ class TestCompletion:
         assert not any(t.startswith("piano:") for t in texts)
 
     def test_non_path_command_offers_no_paths(self, in_tmp_dir):
-        (in_tmp_dir / "tune.alda").write_text("piano: c")
+        (in_tmp_dir / "tune.alda").write_text("piano: c", encoding="utf-8")
         assert self._completions(":tempo tu") == []
 
     def test_instrument_completion_still_works(self):
@@ -483,7 +493,7 @@ class TestCliArgument:
         from aldakit import cli
 
         song = tmp_path / "song.alda"
-        song.write_text("piano: c d e")
+        song.write_text("piano: c d e", encoding="utf-8")
         captured = {}
 
         def fake_run_repl(*args, **kwargs):
@@ -547,7 +557,7 @@ class TestRunReplStartup:
         from aldakit.repl import run_repl
 
         song = tmp_path / "song.alda"
-        song.write_text("piano: c d e")
+        song.write_text("piano: c d e", encoding="utf-8")
 
         assert run_repl(port_name="Fake", initial_file=song) == 0
         assert stubbed_repl == [], "startup file must not play automatically"
@@ -560,7 +570,7 @@ class TestRunReplStartup:
         from aldakit.repl import run_repl
 
         song = tmp_path / "song.alda"
-        song.write_text("piano: c d e")
+        song.write_text("piano: c d e", encoding="utf-8")
 
         run_repl(port_name="Fake", initial_file=song)
         assert "3 notes" in capsys.readouterr().out
@@ -569,7 +579,7 @@ class TestRunReplStartup:
         from aldakit.repl import run_repl
 
         song = tmp_path / "bad.alda"
-        song.write_text("piano: ((((")
+        song.write_text("piano: ((((", encoding="utf-8")
 
         assert run_repl(port_name="Fake", initial_file=song) == 0
         assert stubbed_repl == []
@@ -585,7 +595,7 @@ class TestRunReplStartup:
         from aldakit import repl as repl_module
 
         song = tmp_path / "song.alda"
-        song.write_text("piano: c d e")
+        song.write_text("piano: c d e", encoding="utf-8")
 
         captured = {}
         original = repl_module.ReplSession
