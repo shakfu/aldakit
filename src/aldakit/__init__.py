@@ -1,5 +1,6 @@
 """aldakit: a pythonic alda music programming language implementation."""
 
+from .analysis import Finding, ScoreInfo, inspect_score, lint_score
 from .api import list_ports, play, play_file, save, save_file
 from .ast_nodes import (
     ASTNode,
@@ -51,13 +52,17 @@ from .score import PlaybackHandle, Score
 from .serialize import AldaWriter, write_alda
 from .tokens import SourcePosition, Token, TokenType
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 __all__ = [
     # High-level API
     "Score",
     "PlaybackHandle",
+    "inspect_score",
+    "lint_score",
+    "Finding",
+    "ScoreInfo",
     "play",
     "play_file",
     "save",

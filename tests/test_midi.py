@@ -1,5 +1,7 @@
 """Tests for MIDI generation."""
 
+import pytest
+
 from aldakit import parse, generate_midi
 from aldakit.midi import (
     MidiSequence,
@@ -161,6 +163,201 @@ class TestTempo:
         seq = generate_midi(ast)
         # At 240 BPM, quarter note = 0.25 seconds
         assert abs(seq.notes[0].duration - 0.25 * 0.9) < 0.01
+
+
+class TestGlobalAttributes:
+    """Attributes written with a trailing "!" apply to the whole score.
+
+    Alda applies a global attribute to every part, including parts declared
+    after it. Only tempo used to do that: a `(quant! 95)` or
+    `(key-sig! ...)` above the first part declaration was silently dropped,
+    which is how examples/across_the_sea.alda and examples/debussy_quartet.alda
+    played with the wrong note lengths and the wrong key.
+    """
+
+    def test_global_quantization_reaches_later_parts(self):
+        seq = generate_midi(parse("(quant! 50)\npiano: c4"))
+        # 50% of a quarter note at 120 BPM
+        assert abs(seq.notes[0].duration - 0.25) < 0.001
+
+    def test_global_key_signature_reaches_later_parts(self):
+        seq = generate_midi(parse("(key-sig! '(g minor))\npiano: b e"))
+        assert [n.pitch for n in seq.notes] == [70, 63]  # b- and e-
+
+    def test_global_volume_reaches_later_parts(self):
+        seq = generate_midi(parse("(vol! 50)\npiano: c"))
+        assert seq.notes[0].velocity == 63
+
+    def test_global_transposition_reaches_later_parts(self):
+        seq = generate_midi(parse("(transpose! 12)\npiano: c"))
+        assert seq.notes[0].pitch == 72
+
+    def test_leading_global_attribute_leaves_channel_0_free(self):
+        # An attribute above the first part declaration used to create an
+        # implicit part, which took channel 0 and pushed the score's first
+        # instrument onto channel 1.
+        seq = generate_midi(parse("(tempo! 160)\npiano: c"))
+        assert seq.notes[0].channel == 0
+        assert [pc.channel for pc in seq.program_changes] == [0]
+
+    def test_global_attribute_reaches_every_part(self):
+        seq = generate_midi(parse("(quant! 50)\npiano: c4\nviolin: c4"))
+        assert [round(n.duration, 3) for n in seq.notes] == [0.25, 0.25]
+
+    def test_parts_do_not_share_a_key_signature_dict(self):
+        seq = generate_midi(
+            parse('(key-sig! \'(g minor))\npiano: (key-sig "f+") f\nviolin: b')
+        )
+        assert [n.pitch for n in seq.notes] == [66, 70]  # piano f+, violin b-
+
+    def test_local_attribute_does_not_leak_to_later_parts(self):
+        seq = generate_midi(parse("piano: (quant! 50) c4\nviolin: c4"))
+        # The global form applies from where it appears, so the violin
+        # declared afterwards inherits it...
+        assert [round(n.duration, 3) for n in seq.notes] == [0.25, 0.25]
+
+        seq = generate_midi(parse("piano: (quant 50) c4\nviolin: c4"))
+        # ...but the non-global form only touches the part it is written in.
+        assert [round(n.duration, 3) for n in seq.notes] == [0.25, 0.45]
+
+
+class TestDurationAttributes:
+    """(set-duration), (set-note-length) and (set-duration-ms).
+
+    These set the length a note gets when it does not spell one out. They
+    parsed but did nothing until 0.2.x, which is why poly.alda and
+    multi-poly.alda played with quarter-note defaults throughout.
+    """
+
+    def test_set_duration_is_in_beats(self):
+        seq = generate_midi(parse("piano: (set-duration 2) c"))
+        # Two beats at 120 BPM = 1.0s, quantized to 90%
+        assert seq.notes[0].duration == pytest.approx(0.9)
+
+    def test_set_duration_accepts_fractions(self):
+        seq = generate_midi(parse("piano: (set-duration 2.5) c"))
+        assert seq.notes[0].duration == pytest.approx(1.125)
+
+    def test_set_note_length_is_a_note_value(self):
+        seq = generate_midi(parse("piano: (set-note-length 1) c"))
+        # A whole note is 4 beats = 2.0s at 120 BPM
+        assert seq.notes[0].duration == pytest.approx(1.8)
+
+    def test_set_duration_ms_converts_at_the_part_tempo(self):
+        seq = generate_midi(parse("piano: (tempo 60) (set-duration-ms 2000) c"))
+        # 2 seconds, quantized to 90%
+        assert seq.notes[0].duration == pytest.approx(1.8)
+
+    def test_an_explicit_note_length_still_wins(self):
+        seq = generate_midi(parse("piano: (set-duration 4) c1"))
+        assert seq.notes[0].duration == pytest.approx(1.8)  # the whole note
+
+    def test_nonsense_values_are_ignored(self):
+        for source in ("(set-duration 0)", "(set-duration -1)", "(set-note-length 0)"):
+            seq = generate_midi(parse(f"piano: {source} c"))
+            assert seq.notes[0].duration == pytest.approx(0.45)  # unchanged default
+
+    def test_global_form_reaches_later_parts(self):
+        seq = generate_midi(parse("(set-duration! 2)\npiano: c\nviolin: c"))
+        assert [round(n.duration, 3) for n in seq.notes] == [0.9, 0.9]
+
+
+class TestTrackVolume:
+    """(track-volume) is the channel level, as opposed to note velocity."""
+
+    def test_emits_a_channel_volume_control_change(self):
+        seq = generate_midi(parse("piano: (track-volume 100) c"))
+        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(7, 127)]
+
+    def test_abbreviation(self):
+        seq = generate_midi(parse("piano: (track-vol 50) c"))
+        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(7, 63)]
+
+    def test_does_not_change_note_velocity(self):
+        seq = generate_midi(parse("piano: (track-volume 10) c"))
+        assert seq.notes[0].velocity == 69  # still mf
+
+    def test_scores_that_never_set_it_emit_no_cc7(self):
+        seq = generate_midi(parse("piano: (vol 50) c"))
+        assert [cc for cc in seq.control_changes if cc.control == 7] == []
+
+    def test_is_emitted_at_the_current_time(self):
+        seq = generate_midi(parse("piano: c4 (track-volume 20) d4"))
+        assert seq.control_changes[0].time == pytest.approx(0.5)
+
+    def test_global_form_reaches_later_parts(self):
+        seq = generate_midi(parse("(track-volume! 80)\npiano: c\nviolin: c"))
+        emitted = sorted((cc.channel, cc.value) for cc in seq.control_changes)
+        assert emitted == [(0, 101), (1, 101)]
+
+
+class TestMidiChannel:
+    """(midi-channel N) pins a part to a channel of its choosing."""
+
+    def test_assigns_the_requested_channel(self):
+        seq = generate_midi(parse("piano: (midi-channel 5) c"))
+        assert seq.notes[0].channel == 5
+
+    def test_program_change_follows_the_part(self):
+        seq = generate_midi(parse("cello: (midi-channel 4) c"))
+        assert [(pc.program, pc.channel) for pc in seq.program_changes] == [(42, 4)]
+
+    def test_switching_mid_part_moves_later_notes_only(self):
+        seq = generate_midi(parse("piano: (midi-channel 2) c (midi-channel 3) d"))
+        assert [n.channel for n in seq.notes] == [2, 3]
+        assert sorted(pc.channel for pc in seq.program_changes) == [2, 3]
+
+    def test_two_parts_may_share_a_channel(self):
+        seq = generate_midi(
+            parse("piano: (midi-channel 2) c\nguitar: (midi-channel 2) r4 d")
+        )
+        assert {n.channel for n in seq.notes} == {2}
+
+    def test_drum_channel_is_refused_for_melodic_parts(self):
+        from aldakit.midi.generator import MidiGenerator
+
+        generator = MidiGenerator()
+        sequence = generator.generate(parse("piano: (midi-channel 9) c"))
+        assert sequence.notes[0].channel != 9
+        assert any(d.code == "invalid-midi-channel" for d in generator.diagnostics)
+
+    def test_percussion_may_ask_for_the_drum_channel(self):
+        seq = generate_midi(parse("midi-percussion: (midi-channel 9) c"))
+        assert seq.notes[0].channel == 9
+
+    def test_out_of_range_channel_is_reported(self):
+        from aldakit.midi.generator import MidiGenerator
+
+        generator = MidiGenerator()
+        sequence = generator.generate(parse("piano: (midi-channel 42) c"))
+        assert sequence.notes[0].channel == 0
+        assert any(d.code == "invalid-midi-channel" for d in generator.diagnostics)
+
+
+class TestAttributeRegistry:
+    """Attribute names the generator accepts, and what it does with the rest."""
+
+    def test_documented_abbreviations_are_handled(self):
+        # docs/alda-language/attributes.md lists these abbreviations.
+        seq = generate_midi(parse("piano: (pan 25) c"))
+        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(10, 31)]
+
+        seq = generate_midi(parse("piano: (transposition 12) c"))
+        assert seq.notes[0].pitch == 72
+
+        seq = generate_midi(parse("piano: (quantize 50) c4"))
+        assert abs(seq.notes[0].duration - 0.25) < 0.001
+
+    def test_unknown_attribute_is_reported(self):
+        from aldakit.midi.generator import MidiGenerator
+
+        generator = MidiGenerator()
+        generator.generate(parse("piano: (frobnicate 3) c"))
+        assert any("frobnicate" in str(d) for d in generator.diagnostics)
+
+    def test_unknown_attribute_does_not_stop_generation(self):
+        seq = generate_midi(parse("piano: (frobnicate 3) c d"))
+        assert len(seq.notes) == 2
 
 
 class TestVolume:

@@ -3,6 +3,8 @@
 import pytest
 
 from aldakit import Score
+from aldakit.parser import parse
+from aldakit.score_content import ElementsContent
 from aldakit.compose import (
     # Core
     Note,
@@ -178,6 +180,61 @@ class TestRest:
         assert rest().to_alda() == "r"
         assert rest(duration=2).to_alda() == "r2"
         assert rest(ms=1000).to_alda() == "r1000ms"
+        assert rest(seconds=1.5).to_alda() == "r1.5s"
+        assert rest(duration=2, dots=1).to_alda() == "r2."
+
+
+class TestDurationSpelling:
+    """Notes and rests must express a duration the same way in both paths.
+
+    ``to_ast()`` and ``to_alda()`` are independent conversions of the same four
+    duration parameters. When they disagree, a score played from compose
+    elements sounds different from the same score round-tripped through Alda
+    source, which is the failure mode D4 had.
+    """
+
+    @staticmethod
+    def _lengths(duration):
+        """Duration node components as position-free comparable tuples."""
+        if duration is None:
+            return None
+        return [
+            (
+                type(c).__name__,
+                sorted((k, v) for k, v in vars(c).items() if k != "position"),
+            )
+            for c in duration.components
+        ]
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {},
+            {"duration": 4},
+            {"duration": 2, "dots": 1},
+            {"duration": 8, "dots": 3},
+            {"dots": 1},
+            {"dots": 2},
+            {"ms": 500},
+            {"seconds": 1.5},
+        ],
+    )
+    def test_note_and_rest_agree_with_source(self, kwargs):
+        for element, prefix in ((note("c", **kwargs), "c"), (rest(**kwargs), "r")):
+            source = element.to_alda()
+            assert source.startswith(prefix)
+            root = parse(f"piano: {source}")
+            reparsed = root.children[0].events.events[0]
+            assert self._lengths(reparsed.duration) == self._lengths(
+                element.to_ast().duration
+            )
+
+    def test_dots_without_duration_are_not_dropped(self):
+        # Previously to_ast() assumed a quarter note while to_alda() dropped
+        # the dots entirely, so the two paths disagreed on the length.
+        assert note("c", dots=1).to_alda() == "c4."
+        assert rest(dots=1).to_alda() == "r4."
+        assert rest(dots=1).to_ast().duration is not None
 
 
 class TestChord:
@@ -406,8 +463,8 @@ class TestScoreFromElements:
         score = Score.from_elements(
             part("piano"), tempo(120), note("c", duration=4), note("d"), note("e")
         )
-        assert score._mode == "elements"
-        assert len(score._elements) == 5
+        assert isinstance(score._content, ElementsContent)
+        assert len(score.elements) == 5
 
     def test_from_elements_ast(self):
         score = Score.from_elements(part("piano"), note("c"), note("d"), note("e"))
@@ -435,12 +492,12 @@ class TestScoreFromElements:
 
     def test_from_parts(self):
         score = Score.from_parts(part("piano"), part("violin"))
-        assert len(score._elements) == 2
+        assert len(score.elements) == 2
 
     def test_add_elements(self):
         score = Score.from_elements(part("piano"))
         score.add(note("c"), note("d"), note("e"))
-        assert len(score._elements) == 4
+        assert len(score.elements) == 4
 
     def test_add_returns_self(self):
         score = Score.from_elements(part("piano"))
@@ -455,17 +512,17 @@ class TestScoreFromElements:
     def test_with_part(self):
         score = Score.from_elements()
         score.with_part("piano")
-        assert len(score._elements) == 1
+        assert len(score.elements) == 1
 
     def test_with_tempo(self):
         score = Score.from_elements(part("piano"))
         score.with_tempo(120)
-        assert len(score._elements) == 2
+        assert len(score.elements) == 2
 
     def test_with_volume(self):
         score = Score.from_elements(part("piano"))
         score.with_volume(80)
-        assert len(score._elements) == 2
+        assert len(score.elements) == 2
 
     def test_method_chaining(self):
         score = (
@@ -474,7 +531,7 @@ class TestScoreFromElements:
             .with_tempo(120)
             .add(note("c"), note("d"), note("e"))
         )
-        assert len(score._elements) == 5
+        assert len(score.elements) == 5
 
     def test_repr_elements(self):
         score = Score.from_elements(part("piano"), note("c"))

@@ -10,6 +10,18 @@
 - [x] **Generation diagnostics**: `MidiGenerator.diagnostics` reports unknown instruments, undefined variables and markers, and channel exhaustion.
 - [x] **Golden MIDI fixtures**: `tests/golden/examples.json` pins the output of every example so a change in how a score sounds is a reviewable diff.
 
+## Short-term (continued)
+
+- [x] **Shared music theory**: Pitch names, scale and mode intervals and key signatures moved to `aldakit/theory.py`, shared by the MIDI generator and the compose module. `constants.py` is wired into the code that used to hardcode its values, and `tests/test_constants.py` fails if a constant goes unused.
+- [x] **Attribute handler registry**: Each Alda attribute is a `@handles` method on `MidiGenerator` instead of a branch in an if/elif chain. Unknown attributes now record a diagnostic.
+- [x] **Score source strategy**: `Score` holds one `ScoreContent` (source, elements or imported) instead of a mode tag plus fields that only apply in one mode.
+
+- [x] **Unimplemented attributes**: `set-duration`, `set-note-length`, `set-duration-ms`, `track-volume` (`track-vol`) and `midi-channel` are implemented, so `poly.alda`, `multi-poly.alda`, `track-volume.alda` and `midi-channel-management-2.alda` play as written. Attributes the generator still does not know are reported as diagnostics rather than ignored.
+- [x] **`aldakit soundfont`**: `list`, `install`, `verify` and `path` reach the SoundFont manager, and audio playback with no SoundFont offers to download one.
+- [x] **`aldakit info` and `aldakit lint`**: score inspection and a linter over the generator's diagnostics channel, in `aldakit/analysis.py`. `lint --strict` exits non-zero, so it works as a build step.
+
+- [ ] **Channel reuse over time**: aldakit assigns a channel per part for the life of the score; Alda reuses a channel once a part stops sounding, which is why `all-instruments.alda` and `midi-channel-management.alda` report `too-many-parts` under `aldakit lint`.
+
 ## Medium-term
 
 - [ ] **`--monitor` and `--metronome` CLI helpers**: Provide real-time grid tracking aids for live transcription workflows.

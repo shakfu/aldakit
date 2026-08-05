@@ -26,7 +26,7 @@ from configparser import ConfigParser
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .constants import DEFAULT_BACKEND, DEFAULT_TEMPO
+from .constants import DEFAULT_BACKEND, DEFAULT_TEMPO, SOUNDFONT_ENV_VAR
 
 
 @dataclass
@@ -74,9 +74,9 @@ def load_config() -> Config:
         _load_file(config, path)
 
     # Environment variables override config files
-    if sf := os.environ.get("ALDAKIT_SOUNDFONT"):
+    if sf := os.environ.get(SOUNDFONT_ENV_VAR):
         config.soundfont = _expand_path(sf)
-        config._sources["soundfont"] = "env:ALDAKIT_SOUNDFONT"
+        config._sources["soundfont"] = f"env:{SOUNDFONT_ENV_VAR}"
 
     return config
 

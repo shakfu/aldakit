@@ -324,7 +324,9 @@ def describe_source(source: str) -> str:
     pieces = []
     if parts:
         pieces.append(f"{parts} part{'s' if parts != 1 else ''}")
-    pieces.append(f"{len(sequence.notes)} note{'s' if len(sequence.notes) != 1 else ''}")
+    pieces.append(
+        f"{len(sequence.notes)} note{'s' if len(sequence.notes) != 1 else ''}"
+    )
     pieces.append(f"{sequence.duration():.1f}s")
     return ", ".join(pieces)
 

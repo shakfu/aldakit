@@ -342,7 +342,9 @@ class TestNavigationCommands:
 
     def test_load_after_cd_uses_the_new_directory(self, ctx, in_tmp_dir):
         (in_tmp_dir / "songs").mkdir()
-        (in_tmp_dir / "songs" / "tune.alda").write_text("piano: c d e", encoding="utf-8")
+        (in_tmp_dir / "songs" / "tune.alda").write_text(
+            "piano: c d e", encoding="utf-8"
+        )
         handle_command(ctx, ":cd songs")
         handle_command(ctx, ":load tune.alda")
         assert ctx.session.has_buffer

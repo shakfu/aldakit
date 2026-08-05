@@ -163,14 +163,17 @@ class TestLoadFile:
 
     def test_loads_all_settings(self, tmp_path):
         config_file = tmp_path / "config.ini"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 soundfont = ~/Music/sf2/test.sf2
 backend = audio
 port = TestPort
 tempo = 140
 verbose = true
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
 
@@ -182,10 +185,13 @@ verbose = true
 
     def test_partial_settings(self, tmp_path):
         config_file = tmp_path / "config.ini"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 tempo = 100
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
 
@@ -199,11 +205,14 @@ tempo = 100
 
     def test_tracks_sources(self, tmp_path):
         config_file = tmp_path / "config.ini"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 tempo = 150
 port = MyPort
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
 
@@ -212,10 +221,13 @@ port = MyPort
 
     def test_ignores_missing_section(self, tmp_path):
         config_file = tmp_path / "config.ini"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [other]
 foo = bar
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
 
@@ -225,18 +237,24 @@ foo = bar
     def test_boolean_values(self, tmp_path):
         config_file = tmp_path / "config.ini"
         # Test various boolean representations
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 verbose = yes
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
         assert config.verbose is True
 
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 verbose = no
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         config = Config()
         _load_file(config, config_file)
         assert config.verbose is False
@@ -264,10 +282,13 @@ class TestLoadConfig:
         aldakit_dir = tmp_path / ".aldakit"
         aldakit_dir.mkdir()
         config_file = aldakit_dir / "config.ini"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 [aldakit]
 soundfont = /config/soundfont.sf2
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
@@ -284,18 +305,24 @@ soundfont = /config/soundfont.sf2
         aldakit_dir = tmp_path / ".aldakit"
         aldakit_dir.mkdir()
         user_config = aldakit_dir / "config.ini"
-        user_config.write_text("""
+        user_config.write_text(
+            """
 [aldakit]
 tempo = 100
 port = UserPort
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         # Create local config (should override)
         local_config = tmp_path / "aldakit.ini"
-        local_config.write_text("""
+        local_config.write_text(
+            """
 [aldakit]
 tempo = 200
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)

@@ -21,6 +21,7 @@ from .constants import (
 from .errors import AldaParseError
 from .midi import LibremidiBackend
 from .midi.generator import MidiGenerator
+from .midi.soundfont import DEFAULT_SOUNDFONT
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -189,6 +190,99 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # ------------------------------------------------------------
+    # soundfont subcommand
+
+    soundfont_parser = subparsers.add_parser(
+        "soundfont",
+        help="Find, download and verify SoundFonts for the audio backend",
+    )
+    soundfont_actions = soundfont_parser.add_subparsers(dest="soundfont_command")
+
+    soundfont_actions.add_parser(
+        "list",
+        help="List installed SoundFonts and those available to download",
+    )
+
+    install_parser = soundfont_actions.add_parser(
+        "install",
+        help="Download a SoundFont from the catalog",
+    )
+    install_parser.add_argument(
+        "name",
+        nargs="?",
+        metavar="NAME",
+        help=f"SoundFont to download (default: {DEFAULT_SOUNDFONT})",
+    )
+    install_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Download every SoundFont in the catalog",
+    )
+    install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Download again even if the file is already present",
+    )
+
+    soundfont_actions.add_parser(
+        "verify",
+        help="Check the SHA256 checksum of each downloaded SoundFont",
+    )
+
+    soundfont_actions.add_parser(
+        "path",
+        help="Print the SoundFont the audio backend would use",
+    )
+
+    # ------------------------------------------------------------
+    # info and lint subcommands
+
+    info_parser = subparsers.add_parser(
+        "info",
+        help="Summarise a score: parts, instruments, channels, duration",
+    )
+    info_parser.add_argument(
+        "file",
+        nargs="?",
+        type=Path,
+        help="Alda file to inspect (use - for stdin)",
+    )
+    info_parser.add_argument(
+        "-e",
+        "--eval",
+        metavar="CODE",
+        help="Inspect Alda code given on the command line",
+    )
+
+    lint_parser = subparsers.add_parser(
+        "lint",
+        help="Report problems in a score without playing it",
+    )
+    lint_parser.add_argument(
+        "file",
+        nargs="?",
+        type=Path,
+        help="Alda file to check (use - for stdin)",
+    )
+    lint_parser.add_argument(
+        "-e",
+        "--eval",
+        metavar="CODE",
+        help="Check Alda code given on the command line",
+    )
+    lint_parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Print nothing; report the result through the exit status",
+    )
+    lint_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero on warnings as well as errors",
+    )
+
+    # ------------------------------------------------------------
     # play subcommand
 
     play_parser = subparsers.add_parser(
@@ -309,6 +403,9 @@ class BackendChoice(NamedTuple):
     use_audio: bool
     soundfont: str | None
     error: str | None = None
+    #: True when the only thing missing is a SoundFont, which the caller can
+    #: offer to download rather than just reporting the error.
+    needs_soundfont: bool = False
 
 
 def resolve_backend(
@@ -376,7 +473,9 @@ def resolve_backend(
                 False,
                 None,
                 "No SoundFont found for the audio backend.\n"
-                "Install one, set ALDAKIT_SOUNDFONT, or pass -sf PATH.",
+                "Install one with 'aldakit soundfont install', set "
+                "ALDAKIT_SOUNDFONT, or pass -sf PATH.",
+                needs_soundfont=True,
             )
         return BackendChoice(True, resolved)
 
@@ -388,6 +487,25 @@ def resolve_backend(
             return BackendChoice(True, resolved)
 
     return BackendChoice(False, soundfont)
+
+
+def _resolve_backend_interactively(
+    args: argparse.Namespace, config, port: str | None, **kwargs
+) -> BackendChoice:
+    """Resolve the backend, offering to download a SoundFont if that is all
+    that is missing.
+
+    This is what turns the out-of-box experience for a user with no external
+    synth from an error message into a working playback.
+    """
+    choice = resolve_backend(args, config, port, **kwargs)
+    if not choice.needs_soundfont:
+        return choice
+
+    downloaded = offer_soundfont_download()
+    if downloaded is None:
+        return choice
+    return BackendChoice(True, downloaded)
 
 
 def list_ports(show_inputs: bool = True, show_outputs: bool = True) -> None:
@@ -419,6 +537,285 @@ def list_ports(show_inputs: bool = True, show_outputs: bool = True) -> None:
         else:
             print("No MIDI input ports available.")
             print("You may need to connect a MIDI keyboard or controller.")
+
+
+def soundfont_command(args: argparse.Namespace) -> int:
+    """Find, download and verify SoundFonts for the audio backend."""
+    from .midi.soundfont import SoundFontManager, print_download_progress
+
+    manager = SoundFontManager()
+    action = getattr(args, "soundfont_command", None) or "list"
+
+    if action == "list":
+        installed = manager.list_installed()
+        if installed:
+            print("Installed SoundFonts:")
+            for path in installed:
+                size_mb = path.stat().st_size / (1024 * 1024)
+                print(f"  {path}  ({size_mb:.1f} MB)")
+        else:
+            print("No SoundFonts installed.")
+            print(f"  Searched: {manager.soundfont_dir} and standard locations.")
+
+        print()
+        print("Available to download ('aldakit soundfont install NAME'):")
+        for name, info in manager.list_available_downloads().items():
+            default = " [default]" if name == DEFAULT_SOUNDFONT else ""
+            print(f"  {name}{default}")
+            print(
+                f"      {info.get('description', '')} ({info.get('size_mb', '?')} MB)"
+            )
+        return 0
+
+    if action == "install":
+        try:
+            if getattr(args, "all", False):
+                manager.setup_all(force=getattr(args, "force", False))
+                return 0
+
+            name = getattr(args, "name", None) or DEFAULT_SOUNDFONT
+            info = manager.catalog.get(name)
+            if info is None:
+                available = ", ".join(manager.catalog)
+                print(f"Error: Unknown SoundFont: {name}", file=sys.stderr)
+                print(f"  Available: {available}", file=sys.stderr)
+                return 1
+
+            target = manager.soundfont_dir / str(info["filename"])
+            if target.exists() and not getattr(args, "force", False):
+                print(f"Already installed: {target}")
+                print("  Pass --force to download it again.")
+                return 0
+
+            print(f"Downloading {name} ({info.get('size_mb', '?')} MB)...")
+            print(f"  {info.get('description', '')}")
+            path = manager.download(
+                name,
+                progress_callback=print_download_progress,
+                force=getattr(args, "force", False),
+            )
+            print()
+            print(f"Saved to: {path}")
+            return 0
+        except (RuntimeError, OSError) as e:
+            print(f"Error: Download failed: {e}", file=sys.stderr)
+            return 1
+
+    if action == "verify":
+        results = manager.verify_checksums()
+        present = {
+            name: ok
+            for name, ok in results.items()
+            if _catalog_file_exists(manager, name)
+        }
+        if not present:
+            print("No downloaded SoundFonts from the catalog to verify.")
+            print(f"  Looked in: {manager.soundfont_dir}")
+            return 0
+
+        failed = [name for name, ok in present.items() if not ok]
+        for name, ok in present.items():
+            print(f"  {name}: {'ok' if ok else 'CHECKSUM MISMATCH'}")
+        if failed:
+            print(
+                f"\n{len(failed)} of {len(present)} failed verification. "
+                "Re-download with 'aldakit soundfont install NAME --force'.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"\nAll {len(present)} verified.")
+        return 0
+
+    if action == "path":
+        found = manager.find()
+        if found is None:
+            print("No SoundFont found.", file=sys.stderr)
+            print(
+                "  Install one with 'aldakit soundfont install', "
+                "or set ALDAKIT_SOUNDFONT.",
+                file=sys.stderr,
+            )
+            return 1
+        print(found)
+        return 0
+
+    print(f"Error: Unknown soundfont action: {action}", file=sys.stderr)
+    return 1
+
+
+def _format_duration(seconds: float) -> str:
+    """Seconds as ``m:ss.s`` with the raw value alongside."""
+    minutes, remainder = divmod(seconds, 60)
+    return f"{int(minutes)}:{remainder:04.1f} ({seconds:.2f}s)"
+
+
+def info_command(args: argparse.Namespace) -> int:
+    """Summarise a score without playing it."""
+    from .analysis import inspect_score
+
+    source, filename = read_source(args)
+
+    try:
+        info = inspect_score(source, filename)
+    except AldaParseError as e:
+        print(f"Parse error: {e}", file=sys.stderr)
+        return 1
+
+    print(filename)
+    print(f"  parts:    {len(info.parts)}")
+    print(f"  notes:    {info.note_count}")
+    print(f"  duration: {_format_duration(info.duration)}")
+
+    if info.tempos:
+        # Generation always emits the default tempo at time 0, so the tempo a
+        # score starts at is the last one set there, and only later changes
+        # count as changes.
+        starting = [bpm for time, bpm in info.tempos if time == 0.0][-1]
+        changes = sum(1 for time, _ in info.tempos if time > 0.0)
+        suffix = f", {changes} change{'s' if changes != 1 else ''}" if changes else ""
+        print(f"  tempo:    {starting:g} bpm{suffix}")
+    if info.control_change_count:
+        print(f"  controls: {info.control_change_count}")
+    if info.variables:
+        print(f"  variables: {', '.join(info.variables)}")
+    if info.markers:
+        print(f"  markers:  {', '.join(info.markers)}")
+
+    if info.parts:
+        print()
+        name_width = max(len(p.name) for p in info.parts)
+        name_width = max(name_width, len("part"))
+        instrument_width = max(len(p.instrument) for p in info.parts)
+        instrument_width = max(instrument_width, len("instrument"))
+        header = (
+            f"  {'part':<{name_width}}  {'instrument':<{instrument_width}}  "
+            f"{'prog':>4}  {'chan':>4}  {'notes':>6}"
+        )
+        print(header)
+        print(f"  {'-' * (len(header) - 2)}")
+        for part in info.parts:
+            program = "--" if part.percussion else str(part.program)
+            print(
+                f"  {part.name:<{name_width}}  {part.instrument:<{instrument_width}}  "
+                f"{program:>4}  {part.channel:>4}  {part.note_count:>6}"
+            )
+            details = []
+            if part.key_signature:
+                spelled = " ".join(
+                    f"{letter}{accidental}"
+                    for letter, accidental in sorted(part.key_signature.items())
+                )
+                details.append(f"key {spelled}")
+            if part.transpose:
+                details.append(f"transposed {part.transpose:+d}")
+            if details:
+                print(f"  {' ' * name_width}  ({'; '.join(details)})")
+
+    if info.findings:
+        errors = sum(1 for f in info.findings if f.severity == "error")
+        print()
+        print(
+            f"  {len(info.findings)} finding(s), {errors} error(s). "
+            f"Run 'aldakit lint {filename}' for details."
+        )
+
+    return 0
+
+
+def lint_command(args: argparse.Namespace) -> int:
+    """Report problems in a score without playing it.
+
+    Exit status: 0 when clean, 1 when an error was found (or any finding
+    under ``--strict``), 2 when the score does not parse.
+    """
+    from .analysis import ERROR, WARNING, lint_score
+
+    source, filename = read_source(args)
+    quiet = getattr(args, "quiet", False)
+    strict = getattr(args, "strict", False)
+
+    try:
+        findings = lint_score(source, filename)
+    except AldaParseError as e:
+        if not quiet:
+            print(f"Parse error: {e}", file=sys.stderr)
+        return 2
+
+    if not quiet:
+        for finding in findings:
+            print(finding)
+
+    errors = sum(1 for f in findings if f.severity == ERROR)
+    warnings = sum(1 for f in findings if f.severity == WARNING)
+
+    if not quiet:
+        if findings:
+            print()
+            print(
+                f"{len(findings)} finding(s): {errors} error(s), {warnings} warning(s)."
+            )
+        else:
+            print(f"{filename}: no problems found.")
+
+    if errors or (strict and findings):
+        return 1
+    return 0
+
+
+def _catalog_file_exists(manager, name: str) -> bool:
+    """Whether the catalog entry ``name`` has been downloaded."""
+    info = manager.catalog.get(name)
+    if info is None:
+        return False
+    return (manager.soundfont_dir / str(info["filename"])).exists()
+
+
+def offer_soundfont_download(name: str | None = None) -> str | None:
+    """Offer to download a SoundFont when audio playback has none.
+
+    Only asks when stdin is a terminal, so scripts and CI get the error
+    message rather than a prompt that will never be answered.
+
+    Args:
+        name: Catalog entry to offer. Defaults to the catalog's default.
+
+    Returns:
+        Path to the downloaded SoundFont, or None if it was declined or
+        the download failed.
+    """
+    if not sys.stdin.isatty():
+        return None
+
+    from .midi.soundfont import (
+        DEFAULT_SOUNDFONT as CATALOG_DEFAULT,
+        SoundFontManager,
+        print_download_progress,
+    )
+
+    name = name or CATALOG_DEFAULT
+    manager = SoundFontManager()
+    info = manager.catalog.get(name, {})
+    size = info.get("size_mb", "?")
+
+    print(f"No SoundFont found. aldakit can download {name} ({size} MB) now.")
+    try:
+        answer = input("Download it? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+
+    if answer not in ("", "y", "yes"):
+        return None
+
+    try:
+        path = manager.download(name, progress_callback=print_download_progress)
+    except (RuntimeError, OSError) as e:
+        print(f"\nDownload failed: {e}", file=sys.stderr)
+        return None
+
+    print()
+    print(f"Saved to: {path}")
+    return str(path)
 
 
 def transcribe_command(args: argparse.Namespace) -> int:
@@ -691,7 +1088,7 @@ def main(argv: list[str] | None = None) -> int:
         concurrent = not getattr(args, "sequential", False)
         verbose = args.verbose or config.verbose
 
-        choice = resolve_backend(args, config, port)
+        choice = _resolve_backend_interactively(args, config, port)
         if choice.error:
             print(f"Error: {choice.error}", file=sys.stderr)
             return 1
@@ -722,6 +1119,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "transcribe":
         return transcribe_command(args)
 
+    if args.command == "soundfont":
+        return soundfont_command(args)
+
+    if args.command == "info":
+        return info_command(args)
+
+    if args.command == "lint":
+        return lint_command(args)
+
     if args.command == "eval":
         # Convert eval command to play with -e. The shared playback options
         # (--parse-only, --no-wait, ...) are already parsed onto args.
@@ -748,7 +1154,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         from .repl import run_repl
 
-        choice = resolve_backend(args, config, port)
+        choice = _resolve_backend_interactively(args, config, port)
         if choice.error:
             print(f"Error: {choice.error}", file=sys.stderr)
             return 1
@@ -835,7 +1241,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Saved to {output}")
         return 0
 
-    choice = resolve_backend(args, config, port)
+    choice = _resolve_backend_interactively(args, config, port)
     if choice.error:
         print(f"Error: {choice.error}", file=sys.stderr)
         return 1

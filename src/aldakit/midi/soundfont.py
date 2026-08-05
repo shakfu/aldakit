@@ -14,6 +14,8 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from ..constants import SOUNDFONT_ENV_VAR
+
 # Available SoundFonts for download (public domain / freely distributable)
 SOUNDFONT_CATALOG: dict[str, dict] = {
     "FluidR3_GM": {
@@ -157,7 +159,7 @@ class SoundFontManager:
             Path to a SoundFont file, or None if not found.
         """
         # Check environment variable first
-        env_path = os.environ.get("ALDAKIT_SOUNDFONT")
+        env_path = os.environ.get(SOUNDFONT_ENV_VAR)
         if env_path:
             p = Path(env_path)
             if p.exists():
@@ -194,7 +196,7 @@ class SoundFontManager:
         seen: set[Path] = set()
 
         # Check environment variable
-        env_path = os.environ.get("ALDAKIT_SOUNDFONT")
+        env_path = os.environ.get(SOUNDFONT_ENV_VAR)
         if env_path:
             p = Path(env_path)
             if p.exists() and p not in seen:

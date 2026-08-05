@@ -6,77 +6,13 @@ making it easy to generate melodies within specific tonal contexts.
 
 from __future__ import annotations
 
+# The interval tables and pitch spellings live in aldakit.theory, which the
+# MIDI generator shares. They are re-exported here under the names this module
+# has always used.
+from ..theory import PITCH_SEMITONES as PITCH_TO_OFFSET
+from ..theory import SCALE_INTERVALS as SCALE_INTERVALS
+from ..theory import SEMITONE_PITCHES as OFFSET_TO_PITCH
 from .core import Seq, note
-
-# =============================================================================
-# Scale Definitions
-# =============================================================================
-
-# Intervals from root (in semitones) for common scales
-SCALE_INTERVALS: dict[str, tuple[int, ...]] = {
-    # Major modes
-    "major": (0, 2, 4, 5, 7, 9, 11),
-    "ionian": (0, 2, 4, 5, 7, 9, 11),  # Same as major
-    "dorian": (0, 2, 3, 5, 7, 9, 10),
-    "phrygian": (0, 1, 3, 5, 7, 8, 10),
-    "lydian": (0, 2, 4, 6, 7, 9, 11),
-    "mixolydian": (0, 2, 4, 5, 7, 9, 10),
-    "aeolian": (0, 2, 3, 5, 7, 8, 10),  # Natural minor
-    "locrian": (0, 1, 3, 5, 6, 8, 10),
-    # Minor scales
-    "minor": (0, 2, 3, 5, 7, 8, 10),  # Natural minor (aeolian)
-    "harmonic-minor": (0, 2, 3, 5, 7, 8, 11),
-    "melodic-minor": (0, 2, 3, 5, 7, 9, 11),  # Ascending form
-    # Pentatonic scales
-    "pentatonic": (0, 2, 4, 7, 9),  # Major pentatonic
-    "major-pentatonic": (0, 2, 4, 7, 9),
-    "minor-pentatonic": (0, 3, 5, 7, 10),
-    # Blues scales
-    "blues": (0, 3, 5, 6, 7, 10),
-    "major-blues": (0, 2, 3, 4, 7, 9),
-    # Other common scales
-    "chromatic": (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
-    "whole-tone": (0, 2, 4, 6, 8, 10),
-    "diminished": (0, 2, 3, 5, 6, 8, 9, 11),  # Half-whole
-    "diminished-whole-half": (0, 1, 3, 4, 6, 7, 9, 10),  # Whole-half
-    "augmented": (0, 3, 4, 7, 8, 11),
-    # World scales
-    "japanese": (0, 1, 5, 7, 8),  # In scale
-    "arabic": (0, 1, 4, 5, 7, 8, 11),  # Double harmonic
-    "hungarian-minor": (0, 2, 3, 6, 7, 8, 11),
-    "spanish": (0, 1, 4, 5, 7, 8, 10),  # Phrygian dominant
-    # Bebop scales
-    "bebop-dominant": (0, 2, 4, 5, 7, 9, 10, 11),
-    "bebop-major": (0, 2, 4, 5, 7, 8, 9, 11),
-}
-
-# Pitch name to MIDI offset (C = 0)
-PITCH_TO_OFFSET: dict[str, int] = {
-    "c": 0,
-    "d": 2,
-    "e": 4,
-    "f": 5,
-    "g": 7,
-    "a": 9,
-    "b": 11,
-}
-
-# Offset to pitch name and accidental
-OFFSET_TO_PITCH: list[tuple[str, str | None]] = [
-    ("c", None),
-    ("c", "+"),
-    ("d", None),
-    ("d", "+"),
-    ("e", None),
-    ("f", None),
-    ("f", "+"),
-    ("g", None),
-    ("g", "+"),
-    ("a", None),
-    ("a", "+"),
-    ("b", None),
-]
-
 
 # =============================================================================
 # Scale Functions

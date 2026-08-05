@@ -101,7 +101,9 @@ class TestNoMidiPorts:
 
     def test_configured_soundfont_wins_over_discovery(self):
         with Env(ports=[], discovered="/sf/found.sf2"):
-            choice = resolve_backend(args(), config(soundfont="/sf/configured.sf2"), None)
+            choice = resolve_backend(
+                args(), config(soundfont="/sf/configured.sf2"), None
+            )
         assert choice.use_audio
         # A configured path is passed through verbatim, not normalised
         assert choice.soundfont == "/sf/configured.sf2"
@@ -184,7 +186,9 @@ class TestPathNormalisation:
 
     def test_configured_paths_are_passed_through_verbatim(self):
         with Env(ports=[], discovered=None):
-            choice = resolve_backend(args(), config(soundfont="/sf/as-written.sf2"), None)
+            choice = resolve_backend(
+                args(), config(soundfont="/sf/as-written.sf2"), None
+            )
         assert choice.soundfont == "/sf/as-written.sf2"
 
     def test_cli_paths_are_passed_through_verbatim(self):
@@ -210,14 +214,18 @@ class TestPrecedence:
 
     def test_config_soundfont_beats_discovery(self):
         with Env(ports=[], discovered="/discovered.sf2"):
-            choice = resolve_backend(args(audio=True), config(soundfont="/config.sf2"), None)
+            choice = resolve_backend(
+                args(audio=True), config(soundfont="/config.sf2"), None
+            )
         assert choice.soundfont == "/config.sf2"
 
 
 class TestAllSubcommandsAgree:
     """The three call sites used to be near-copies that disagreed."""
 
-    @pytest.mark.parametrize("argv", [["play", "x.alda"], ["eval", "piano: c"], ["repl"]])
+    @pytest.mark.parametrize(
+        "argv", [["play", "x.alda"], ["eval", "piano: c"], ["repl"]]
+    )
     def test_same_decision_for_every_subcommand(self, argv):
         parsed = create_parser().parse_args(argv)
         with Env(ports=[], discovered="/sf/found.sf2"):
@@ -225,7 +233,9 @@ class TestAllSubcommandsAgree:
         assert choice.use_audio
         assert choice.soundfont == native("/sf/found.sf2")
 
-    @pytest.mark.parametrize("argv", [["play", "x.alda", "-a"], ["eval", "piano: c", "-a"], ["repl", "-a"]])
+    @pytest.mark.parametrize(
+        "argv", [["play", "x.alda", "-a"], ["eval", "piano: c", "-a"], ["repl", "-a"]]
+    )
     def test_dash_a_works_for_every_subcommand(self, argv):
         parsed = create_parser().parse_args(argv)
         with Env(ports=["Port"], discovered="/sf/found.sf2"):

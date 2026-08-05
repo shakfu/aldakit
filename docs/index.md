@@ -1,6 +1,6 @@
 # aldakit
 
-A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.io) music programming language.
+A Python parser and MIDI generator for the [Alda](https://alda.io) music programming language, with no install-time dependencies: prompt-toolkit, libremidi and TinySoundFont are bundled.
 
 ## Features
 
@@ -15,6 +15,8 @@ A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.i
 - **Transformers** — Transpose, invert, augment, diminish, and more
 - **Generative Music** — Markov chains, L-systems, cellular automata, Euclidean rhythms
 - **Interactive REPL** — Syntax highlighting, auto-completion, and live playback
+- **Score Checking** — `aldakit lint` and `aldakit info` report what will sound wrong before you play it
+- **SoundFont Management** — Find, download and verify SoundFonts from the CLI
 - **CLI Tools** — Play, transcribe, and convert from the command line
 
 ## Quick Start
@@ -44,6 +46,13 @@ aldakit play examples/bach-prelude.alda -o bach.mid
 
 # Use built-in audio instead of MIDI
 aldakit play -a examples/twinkle.alda
+
+# Get a SoundFont for the audio backend
+aldakit soundfont install
+
+# Inspect or check a score without playing it
+aldakit info examples/twinkle.alda
+aldakit lint examples/twinkle.alda
 ```
 
 ### Python API
@@ -64,6 +73,12 @@ score = Score("piano: (tempo 120) o4 c4 d e f | g a b > c")
 score.play()
 score.save("output.mid")
 print(f"Duration: {score.duration}s")
+
+# Check a score without playing it
+from aldakit import lint_score
+
+for finding in lint_score("piano: nosuchvar"):
+    print(finding.severity, finding.code, finding.message)
 ```
 
 ## Architecture

@@ -34,7 +34,26 @@ from ..ast_nodes import (
     VariableReferenceNode,
     VoiceGroupNode,
 )
-from ..constants import MIDI_DRUM_CHANNEL, MIDI_MAX_CHANNELS
+from ..constants import (
+    BEATS_PER_WHOLE_NOTE,
+    DEFAULT_DURATION,
+    DEFAULT_OCTAVE,
+    DEFAULT_QUANTIZATION,
+    DEFAULT_TEMPO,
+    DEFAULT_VOLUME,
+    DYNAMICS_VELOCITY,
+    MIDI_CC_PAN,
+    MIDI_CC_VOLUME,
+    MIDI_DRUM_CHANNEL,
+    MIDI_MAX_CHANNELS,
+    MIDI_MAX_CONTROL_VALUE,
+    MIDI_MAX_NOTE,
+    MIDI_MAX_VELOCITY,
+    MIDI_MIN_NOTE,
+    MIDI_MIN_VELOCITY,
+    MILLISECONDS_PER_SECOND,
+    SECONDS_PER_MINUTE,
+)
 from ..midi.types import (
     MidiNote,
     MidiProgramChange,
@@ -42,85 +61,36 @@ from ..midi.types import (
     MidiTempoChange,
     is_percussion,
     lookup_instrument,
-    note_to_midi,
+    note_to_midi_raw,
 )
+from ..theory import key_signature_from_string, key_signature_from_symbols
 
 
-# Key signature definitions: maps key name to dict of {note: accidental}
-# Accidentals: "+" for sharp, "-" for flat
-KEY_SIGNATURES: dict[str, dict[str, str]] = {
-    # Major keys (sharp side)
-    "c major": {},
-    "g major": {"f": "+"},
-    "d major": {"f": "+", "c": "+"},
-    "a major": {"f": "+", "c": "+", "g": "+"},
-    "e major": {"f": "+", "c": "+", "g": "+", "d": "+"},
-    "b major": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+"},
-    "f# major": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+"},
-    "f+ major": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+"},
-    "c# major": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+", "b": "+"},
-    "c+ major": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+", "b": "+"},
-    # Major keys (flat side)
-    "f major": {"b": "-"},
-    "bb major": {"b": "-", "e": "-"},
-    "b- major": {"b": "-", "e": "-"},
-    "eb major": {"b": "-", "e": "-", "a": "-"},
-    "e- major": {"b": "-", "e": "-", "a": "-"},
-    "ab major": {"b": "-", "e": "-", "a": "-", "d": "-"},
-    "a- major": {"b": "-", "e": "-", "a": "-", "d": "-"},
-    "db major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-"},
-    "d- major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-"},
-    "gb major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-"},
-    "g- major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-"},
-    "cb major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-", "f": "-"},
-    "c- major": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-", "f": "-"},
-    # Minor keys (sharp side) - relative to major
-    "a minor": {},
-    "e minor": {"f": "+"},
-    "b minor": {"f": "+", "c": "+"},
-    "f# minor": {"f": "+", "c": "+", "g": "+"},
-    "f+ minor": {"f": "+", "c": "+", "g": "+"},
-    "c# minor": {"f": "+", "c": "+", "g": "+", "d": "+"},
-    "c+ minor": {"f": "+", "c": "+", "g": "+", "d": "+"},
-    "g# minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+"},
-    "g+ minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+"},
-    "d# minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+"},
-    "d+ minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+"},
-    "a# minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+", "b": "+"},
-    "a+ minor": {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+", "b": "+"},
-    # Minor keys (flat side)
-    "d minor": {"b": "-"},
-    "g minor": {"b": "-", "e": "-"},
-    "c minor": {"b": "-", "e": "-", "a": "-"},
-    "f minor": {"b": "-", "e": "-", "a": "-", "d": "-"},
-    "bb minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-"},
-    "b- minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-"},
-    "eb minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-"},
-    "e- minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-"},
-    "ab minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-", "f": "-"},
-    "a- minor": {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-", "f": "-"},
-    # Modes (based on C major)
-    "c ionian": {},
-    "d dorian": {},
-    "e phrygian": {},
-    "f lydian": {},
-    "g mixolydian": {},
-    "a aeolian": {},
-    "b locrian": {},
-    # Modes on other roots would need calculation, but these are the common ones
-    # For modes, the key signature is determined by the parent major scale
-}
+# Attribute name as written in a score -> name of the MidiGenerator method
+# that applies it. Populated by the @handles decorator on those methods, so
+# adding an attribute means writing one method, not editing a dispatch chain.
+ATTRIBUTE_HANDLERS: dict[str, str] = {}
 
-# Mode intervals relative to major (for calculating modes on any root)
-MODE_INTERVALS: dict[str, int] = {
-    "ionian": 0,  # Same as major
-    "dorian": 2,  # 2nd degree of major
-    "phrygian": 4,  # 3rd degree
-    "lydian": 5,  # 4th degree
-    "mixolydian": 7,  # 5th degree
-    "aeolian": 9,  # 6th degree (natural minor)
-    "locrian": 11,  # 7th degree
-}
+
+def handles(*names: str):
+    """Register the decorated method as the handler for these attributes.
+
+    Handlers take ``(func_name, args, parts)``: the attribute as written (so
+    a handler can tell ``tempo`` from ``tempo!``), its unevaluated arguments,
+    and the part states currently active.
+    """
+
+    def decorate(method):
+        for name in names:
+            ATTRIBUTE_HANDLERS[name] = method.__name__
+        return method
+
+    return decorate
+
+
+def _copied(value: object) -> object:
+    """A copy of a mutable attribute value, so parts do not share one dict."""
+    return dict(value) if isinstance(value, dict) else value
 
 
 # Channels available to pitched instruments. Channel 9 (MIDI channel 10) is
@@ -137,6 +107,9 @@ class Diagnostic:
 
     message: str
     position: object = None  # SourcePosition | None
+    #: Short stable slug for the kind of problem, e.g. "unknown-instrument".
+    #: Lets tools group and filter diagnostics without matching on prose.
+    code: str = ""
 
     def __str__(self) -> str:
         if self.position is not None:
@@ -148,30 +121,38 @@ class Diagnostic:
 class PartState:
     """State for a single part/instrument."""
 
-    octave: int = 4
-    tempo: float = 120.0  # BPM
-    volume: int = 69  # 0-127, default mf (54% of 127)
-    quantization: float = 0.9  # 0.0-1.0, affects note duration
-    default_duration: float = 1.0  # Duration in beats (quarter note = 1 beat)
+    octave: int = DEFAULT_OCTAVE
+    tempo: float = float(DEFAULT_TEMPO)  # BPM
+    volume: int = DEFAULT_VOLUME  # 0-127, default mf (54% of 127)
+    quantization: float = DEFAULT_QUANTIZATION  # 0.0-1.0, affects note duration
+    default_duration: float = DEFAULT_DURATION  # Beats (quarter note = 1 beat)
     current_time: float = 0.0  # Current time in seconds
     channel: int = 0
     program: int = 0
     key_signature: dict[str, str] = field(default_factory=dict)  # note -> accidental
     transpose: int = 0  # Transposition in semitones
     percussion: bool = False  # True for midi-percussion (channel 9)
+    # Channel volume (MIDI CC 7), 0-127. None until the score sets it, so a
+    # score that never mentions track-volume emits no CC 7 at all.
+    track_volume: int | None = None
 
 
 @dataclass
 class GeneratorState:
     """Global state for the MIDI generator."""
 
-    global_tempo: float = 120.0
+    global_tempo: float = float(DEFAULT_TEMPO)
     variables: dict[str, EventSequenceNode] = field(default_factory=dict)
     markers: dict[str, float] = field(default_factory=dict)  # marker -> time in seconds
     parts: dict[str, PartState] = field(default_factory=dict)
     current_parts: list[str] = field(
         default_factory=list
     )  # Active parts (multi-instrument support)
+    # Attribute values set globally with a trailing "!", keyed by the
+    # PartState field they set. Parts declared after the fact start with them,
+    # which is what makes a global attribute at the top of a score apply to
+    # the whole score.
+    global_attributes: dict[str, object] = field(default_factory=dict)
     next_channel: int = 0  # Index into MELODIC_CHANNELS
     repetition_number: int = 1  # Current repetition when in a repeat loop
     diagnostics: list[Diagnostic] = field(default_factory=list)
@@ -224,9 +205,9 @@ class MidiGenerator(ASTVisitor):
         """
         return self.state.diagnostics
 
-    def _warn(self, message: str, position: object = None) -> None:
+    def _warn(self, message: str, position: object = None, code: str = "") -> None:
         """Record a non-fatal problem."""
-        self.state.diagnostics.append(Diagnostic(message, position))
+        self.state.diagnostics.append(Diagnostic(message, position, code))
 
     def _allocate_channel(self) -> int:
         """Allocate the next melodic MIDI channel, skipping the drum channel.
@@ -240,7 +221,8 @@ class MidiGenerator(ASTVisitor):
             self._warn(
                 f"More than {len(MELODIC_CHANNELS)} melodic parts declared; "
                 "MIDI channels are being reused and instrument assignments "
-                "will collide."
+                "will collide.",
+                code="channel-exhaustion",
             )
             index %= len(MELODIC_CHANNELS)
         self.state.next_channel += 1
@@ -269,7 +251,7 @@ class MidiGenerator(ASTVisitor):
         if not self.state.current_parts:
             # Create implicit part
             self.state.current_parts = ["_default"]
-            self.state.parts["_default"] = PartState(
+            self.state.parts["_default"] = self._new_part_state(
                 channel=self._allocate_channel(),
                 program=0,
             )
@@ -333,6 +315,7 @@ class MidiGenerator(ASTVisitor):
             self._warn(
                 f"Unknown group member {names[0]!r}; no aliased group defines it.",
                 node.declaration.position,
+                code="unknown-group-member",
             )
 
         # For multi-instrument parts (violin/viola/cello), create a part for each
@@ -356,10 +339,9 @@ class MidiGenerator(ASTVisitor):
                 if is_percussion(name):
                     # Percussion always lives on the GM drum channel and takes
                     # no program change: the note number selects the drum sound.
-                    self.state.parts[part_name] = PartState(
+                    self.state.parts[part_name] = self._new_part_state(
                         channel=MIDI_DRUM_CHANNEL,
                         program=0,
-                        tempo=self.state.global_tempo,
                         percussion=True,
                     )
                     active_parts.append(part_name)
@@ -374,15 +356,15 @@ class MidiGenerator(ASTVisitor):
                             f"Unknown instrument {name!r}; "
                             "falling back to acoustic grand piano.",
                             node.declaration.position,
+                            code="unknown-instrument",
                         )
                     program = 0
 
                 channel = self._allocate_channel()
 
-                self.state.parts[part_name] = PartState(
+                self.state.parts[part_name] = self._new_part_state(
                     channel=channel,
                     program=program,
-                    tempo=self.state.global_tempo,
                 )
 
                 # Add program change
@@ -439,12 +421,19 @@ class MidiGenerator(ASTVisitor):
                 # Natural sign explicitly cancels key signature
                 accidentals = []
 
-            # Calculate MIDI note number
-            midi_note = note_to_midi(node.letter, part.octave, accidentals)
-
-            # Apply transposition
+            # Calculate the MIDI note number, including transposition, and
+            # report rather than silently clamp a note outside 0-127.
+            raw_pitch = note_to_midi_raw(node.letter, part.octave, accidentals)
             if part.transpose != 0 and not part.percussion:
-                midi_note = max(0, min(127, midi_note + part.transpose))
+                raw_pitch += part.transpose
+            midi_note = max(MIDI_MIN_NOTE, min(MIDI_MAX_NOTE, raw_pitch))
+            if raw_pitch != midi_note:
+                self._warn(
+                    f"Note {node.letter!r} in octave {part.octave} is outside "
+                    f"the MIDI range ({raw_pitch}); clamped to {midi_note}.",
+                    node.position,
+                    code="note-out-of-range",
+                )
 
             # Calculate duration
             duration_beats = self._calculate_duration(node.duration, part)
@@ -509,11 +498,10 @@ class MidiGenerator(ASTVisitor):
             part.current_time = start_times[id(part)] + max_duration
 
     def visit_LispListNode(self, node: LispListNode) -> None:
-        """Process a Lisp S-expression (attribute setting)."""
+        """Apply an attribute S-expression such as ``(tempo 120)``."""
         if not node.elements:
             return
 
-        # Get the function name
         first = node.elements[0]
         if not isinstance(first, LispSymbolNode):
             return
@@ -521,147 +509,327 @@ class MidiGenerator(ASTVisitor):
         func_name = first.name.lower()
         args = node.elements[1:]
 
-        # Get all active parts for multi-instrument support
-        all_parts = self._get_all_part_states()
+        handler_name = ATTRIBUTE_HANDLERS.get(func_name)
+        if handler_name is None:
+            self._warn(
+                f"Unknown attribute {func_name!r}; ignored.",
+                node.position,
+                code="unknown-attribute",
+            )
+            return
 
-        if func_name in ("tempo", "tempo!"):
-            # Set tempo
-            if args and isinstance(args[0], LispNumberNode):
-                new_tempo = float(args[0].value)
-                if func_name == "tempo!":
-                    # Global tempo
-                    self.state.global_tempo = new_tempo
-                    for p in self.state.parts.values():
-                        p.tempo = new_tempo
-                else:
-                    for part in all_parts:
-                        part.tempo = new_tempo
-                self.sequence.tempo_changes.append(
-                    MidiTempoChange(bpm=new_tempo, time=all_parts[0].current_time)
+        # A global attribute before the first part declaration applies to
+        # every part through state.global_attributes, so it must not force an
+        # implicit part into existence: that would spend channel 0 on a part
+        # with no notes and push the score's first instrument to channel 1.
+        if func_name.endswith("!") and not self.state.current_parts:
+            parts: list[PartState] = []
+        else:
+            # All active parts, so 'violin/viola:' sets the attribute on both.
+            parts = self._get_all_part_states()
+
+        getattr(self, handler_name)(func_name, args, parts)
+
+    @staticmethod
+    def _number_arg(args: list) -> float | None:
+        """The first argument as a number, or None if it is not one."""
+        if args and isinstance(args[0], LispNumberNode):
+            return float(args[0].value)
+        return None
+
+    def _target_parts(self, func_name: str, parts: list[PartState]) -> list[PartState]:
+        """Parts an attribute applies to.
+
+        A trailing ``!`` makes an attribute global, which in Alda means it
+        applies to every part rather than only the ones currently active.
+        """
+        if func_name.endswith("!"):
+            return list(self.state.parts.values())
+        return parts
+
+    def _set_attribute(
+        self, func_name: str, parts: list[PartState], field_name: str, value: object
+    ) -> None:
+        """Set a part-state field on the parts an attribute applies to.
+
+        A global attribute is also remembered, so a part declared later in the
+        score -- including every part, when the attribute is written above the
+        first declaration -- starts out with it.
+        """
+        if func_name.endswith("!"):
+            self.state.global_attributes[field_name] = value
+        for part in self._target_parts(func_name, parts):
+            setattr(part, field_name, _copied(value))
+
+    def _new_part_state(self, **kwargs) -> PartState:
+        """Create a part state carrying the global attributes set so far."""
+        state = PartState(tempo=self.state.global_tempo, **kwargs)
+        for field_name, value in self.state.global_attributes.items():
+            setattr(state, field_name, _copied(value))
+        if state.track_volume is not None:
+            # Inherited from a global (track-volume! ...): the new part has to
+            # send the control change on its own channel.
+            self._emit_track_volume(state, 0.0)
+        return state
+
+    @handles("tempo", "tempo!")
+    def _set_tempo(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Set the tempo in beats per minute."""
+        new_tempo = self._number_arg(args)
+        if new_tempo is None:
+            return
+        if func_name == "tempo!":
+            self.state.global_tempo = new_tempo
+        self._set_attribute(func_name, parts, "tempo", new_tempo)
+        self.sequence.tempo_changes.append(
+            MidiTempoChange(bpm=new_tempo, time=parts[0].current_time if parts else 0.0)
+        )
+
+    @handles("vol", "volume", "vol!", "volume!")
+    def _set_volume(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Set volume on Alda's 0-100 scale, stored as MIDI velocity."""
+        vol = self._number_arg(args)
+        if vol is None:
+            return
+        velocity = min(
+            MIDI_MAX_VELOCITY,
+            max(MIDI_MIN_VELOCITY, int(vol * MIDI_MAX_VELOCITY / 100)),
+        )
+        self._set_attribute(func_name, parts, "volume", velocity)
+
+    @handles(
+        "quant",
+        "quantize",
+        "quantization",
+        "quant!",
+        "quantize!",
+        "quantization!",
+    )
+    def _set_quantization(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Set the fraction of its duration a note actually sounds for."""
+        quant = self._number_arg(args)
+        if quant is None:
+            return
+        quantization = max(0.0, min(1.0, quant / 100.0))
+        self._set_attribute(func_name, parts, "quantization", quantization)
+
+    @handles("panning", "pan", "panning!", "pan!")
+    def _set_panning(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Emit a pan control change on each active part's channel."""
+        pan = self._number_arg(args)
+        if pan is None:
+            return
+        pan_value = min(
+            MIDI_MAX_CONTROL_VALUE,
+            max(0, int(pan * MIDI_MAX_CONTROL_VALUE / 100)),
+        )
+        from .types import MidiControlChange
+
+        for part in self._target_parts(func_name, parts):
+            self.sequence.control_changes.append(
+                MidiControlChange(
+                    control=MIDI_CC_PAN,
+                    value=pan_value,
+                    time=part.current_time,
+                    channel=part.channel,
                 )
+            )
 
-        elif func_name in ("vol", "volume", "vol!", "volume!"):
-            # Set volume (0-100 -> 0-127)
-            if args and isinstance(args[0], LispNumberNode):
-                vol = int(args[0].value)
-                velocity = min(127, max(0, int(vol * 127 / 100)))
-                for part in all_parts:
-                    part.volume = velocity
+    @handles("octave", "octave!")
+    def _set_octave(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Set the octave to a number, or shift it with 'up / 'down."""
+        if not args:
+            return
 
-        elif func_name in ("quant", "quantize", "quantization"):
-            # Set quantization (0-100 -> 0.0-1.0)
-            if args and isinstance(args[0], LispNumberNode):
-                quant = float(args[0].value)
-                quantization = max(0.0, min(1.0, quant / 100.0))
-                for part in all_parts:
-                    part.quantization = quantization
+        target = self._target_parts(func_name, parts)
+        octave = self._number_arg(args)
+        if octave is not None:
+            for part in target:
+                part.octave = int(octave)
+            return
 
-        elif func_name == "panning":
-            # Set panning (0-100 -> 0-127)
-            if args and isinstance(args[0], LispNumberNode):
-                pan = int(args[0].value)
-                pan_value = min(127, max(0, int(pan * 127 / 100)))
-                from .types import MidiControlChange
+        # 'up and 'down, quoted as Alda writes them or bare for convenience.
+        arg = args[0]
+        if isinstance(arg, LispQuotedNode) and isinstance(arg.value, LispSymbolNode):
+            symbol = arg.value.name.lower()
+        elif isinstance(arg, LispSymbolNode):
+            symbol = arg.name.lower()
+        else:
+            return
 
-                for part in all_parts:
-                    self.sequence.control_changes.append(
-                        MidiControlChange(
-                            control=10,  # Pan control
-                            value=pan_value,
-                            time=part.current_time,
-                            channel=part.channel,
-                        )
+        if symbol == "up":
+            for part in target:
+                part.octave += 1
+        elif symbol == "down":
+            for part in target:
+                part.octave -= 1
+
+    @handles(*DYNAMICS_VELOCITY)
+    def _set_dynamic(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Apply a dynamic marking such as (mf) as a volume level."""
+        velocity = DYNAMICS_VELOCITY[func_name]
+        for part in parts:
+            part.volume = velocity
+
+    @handles("key-sig", "key-signature", "key-sig!", "key-signature!")
+    def _set_key_signature(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Set the key signature applied to unaltered notes."""
+        key_sig = self._parse_key_signature(args)
+        if key_sig is None:
+            return
+        self._set_attribute(func_name, parts, "key_signature", key_sig)
+
+    @handles("transpose", "transpose!", "transposition", "transposition!")
+    def _set_transposition(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Shift every subsequent note by a number of semitones."""
+        semitones = self._number_arg(args)
+        if semitones is None:
+            return
+        self._set_attribute(func_name, parts, "transpose", int(semitones))
+
+    @handles("set-duration", "set-duration!")
+    def _set_duration(self, func_name: str, args: list, parts: list[PartState]) -> None:
+        """Set the default note length in beats, e.g. 2.5 for a dotted half."""
+        beats = self._number_arg(args)
+        if beats is None or beats <= 0:
+            return
+        self._set_attribute(func_name, parts, "default_duration", beats)
+
+    @handles("set-note-length", "set-note-length!")
+    def _set_note_length(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Set the default note length as a note value, e.g. 1 for a whole note."""
+        denominator = self._number_arg(args)
+        if denominator is None or denominator <= 0:
+            return
+        self._set_attribute(
+            func_name, parts, "default_duration", BEATS_PER_WHOLE_NOTE / denominator
+        )
+
+    @handles("set-duration-ms", "set-duration-ms!")
+    def _set_duration_ms(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Set the default note length in milliseconds.
+
+        Milliseconds are converted to beats per part, because parts can be at
+        different tempos.
+        """
+        ms = self._number_arg(args)
+        if ms is None or ms < 0:
+            return
+        for part in self._target_parts(func_name, parts):
+            beats_per_second = part.tempo / SECONDS_PER_MINUTE
+            part.default_duration = (ms / MILLISECONDS_PER_SECOND) * beats_per_second
+
+    @handles("track-volume", "track-vol", "track-volume!", "track-vol!")
+    def _set_track_volume(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Set the channel volume (MIDI CC 7), Alda's track-volume.
+
+        This is the instrument's overall level, as opposed to ``volume``, which
+        is the velocity of individual notes.
+        """
+        level = self._number_arg(args)
+        if level is None:
+            return
+        value = min(
+            MIDI_MAX_CONTROL_VALUE,
+            max(0, int(level * MIDI_MAX_CONTROL_VALUE / 100)),
+        )
+        self._set_attribute(func_name, parts, "track_volume", value)
+        for part in self._target_parts(func_name, parts):
+            self._emit_track_volume(part, part.current_time)
+
+    @handles("midi-channel")
+    def _set_midi_channel(
+        self, func_name: str, args: list, parts: list[PartState]
+    ) -> None:
+        """Pin a part to a specific MIDI channel.
+
+        Channel 9 is the General MIDI drum channel, so a melodic part asking
+        for it is reported and left where it is rather than silently turning
+        into drum hits.
+        """
+        channel = self._number_arg(args)
+        if channel is None:
+            return
+        channel = int(channel)
+        if not 0 <= channel < MIDI_MAX_CHANNELS:
+            self._warn(
+                f"MIDI channel {channel} is outside 0-{MIDI_MAX_CHANNELS - 1}; "
+                "ignored.",
+                code="invalid-midi-channel",
+            )
+            return
+
+        for part in parts:
+            if channel == MIDI_DRUM_CHANNEL and not part.percussion:
+                self._warn(
+                    f"Channel {MIDI_DRUM_CHANNEL} is reserved for percussion; "
+                    "ignoring (midi-channel 9) in a melodic part.",
+                    code="invalid-midi-channel",
+                )
+                continue
+            if part.channel == channel:
+                continue
+            previous = part.channel
+            part.channel = channel
+            self._release_channel(part, previous)
+            # The instrument has to be selected again on the new channel.
+            if not part.percussion:
+                self.sequence.program_changes.append(
+                    MidiProgramChange(
+                        program=part.program,
+                        time=part.current_time,
+                        channel=channel,
                     )
+                )
+            if part.track_volume is not None:
+                self._emit_track_volume(part, part.current_time)
 
-        elif func_name in ("octave", "octave!"):
-            # Set octave - can be number or quoted symbol ('up, 'down)
-            if args:
-                if isinstance(args[0], LispNumberNode):
-                    octave = int(args[0].value)
-                    for part in all_parts:
-                        part.octave = octave
-                elif isinstance(args[0], LispQuotedNode):
-                    # Handle 'up and 'down
-                    if isinstance(args[0].value, LispSymbolNode):
-                        symbol = args[0].value.name.lower()
-                        if symbol == "up":
-                            for part in all_parts:
-                                part.octave += 1
-                        elif symbol == "down":
-                            for part in all_parts:
-                                part.octave -= 1
-                elif isinstance(args[0], LispSymbolNode):
-                    # Handle unquoted up/down (non-standard but convenient)
-                    symbol = args[0].name.lower()
-                    if symbol == "up":
-                        for part in all_parts:
-                            part.octave += 1
-                    elif symbol == "down":
-                        for part in all_parts:
-                            part.octave -= 1
+    def _release_channel(self, part: PartState, channel: int) -> None:
+        """Undo the program change for a channel a part left without using.
 
-        # Dynamic markings
-        elif func_name in (
-            "pppppp",
-            "ppppp",
-            "pppp",
-            "ppp",
-            "pp",
-            "p",
-            "mp",
-            "mf",
-            "f",
-            "ff",
-            "fff",
-            "ffff",
-            "fffff",
-            "ffffff",
+        A part is given a channel when it is declared, so ``(midi-channel N)``
+        as the part's first event leaves a program change on a channel that
+        never sounds a note. Exported files show that as an empty track with
+        an instrument on it, so drop it.
+        """
+        if any(note.channel == channel for note in self.sequence.notes):
+            return
+        if any(
+            other.channel == channel
+            for other in self.state.parts.values()
+            if other is not part
         ):
-            # Official Alda dynamics: volume 0-100 maps to velocity 0-127
-            # velocity = volume * 127 / 100
-            dynamics = {
-                "pppppp": 1,  # vol=1
-                "ppppp": 10,  # vol=8
-                "pppp": 20,  # vol=16
-                "ppp": 30,  # vol=24
-                "pp": 39,  # vol=31
-                "p": 50,  # vol=39
-                "mp": 58,  # vol=46
-                "mf": 69,  # vol=54
-                "f": 79,  # vol=62
-                "ff": 88,  # vol=69
-                "fff": 98,  # vol=77
-                "ffff": 108,  # vol=85
-                "fffff": 117,  # vol=92
-                "ffffff": 127,  # vol=100
-            }
-            velocity = dynamics.get(func_name, 69)
-            for part in all_parts:
-                part.volume = velocity
+            return
+        self.sequence.program_changes = [
+            pc for pc in self.sequence.program_changes if pc.channel != channel
+        ]
 
-        elif func_name in ("key-sig", "key-signature", "key-sig!", "key-signature!"):
-            # Set key signature
-            key_sig = self._parse_key_signature(args)
-            if key_sig is not None:
-                if func_name.endswith("!"):
-                    # Global key signature
-                    for p in self.state.parts.values():
-                        p.key_signature = key_sig.copy()
-                else:
-                    for part in all_parts:
-                        part.key_signature = key_sig.copy()
+    def _emit_track_volume(self, part: PartState, time: float) -> None:
+        """Emit the channel-volume control change for a part."""
+        if part.track_volume is None:
+            return
+        from .types import MidiControlChange
 
-        elif func_name in ("transpose", "transpose!"):
-            # Set transposition in semitones
-            if args and isinstance(args[0], LispNumberNode):
-                semitones = int(args[0].value)
-                if func_name.endswith("!"):
-                    # Global transpose
-                    for p in self.state.parts.values():
-                        p.transpose = semitones
-                else:
-                    for part in all_parts:
-                        part.transpose = semitones
+        self.sequence.control_changes.append(
+            MidiControlChange(
+                control=MIDI_CC_VOLUME,
+                value=part.track_volume,
+                time=time,
+                channel=part.channel,
+            )
+        )
 
     def _parse_key_signature(self, args: list) -> dict[str, str] | None:
         """Parse key signature from S-expression arguments.
@@ -677,31 +845,13 @@ class MidiGenerator(ASTVisitor):
 
         # String format: "f+ c+ g+"
         if isinstance(arg, LispStringNode):
-            return self._parse_key_sig_string(arg.value)
+            return key_signature_from_string(arg.value)
 
         # Quoted list format: '(g minor)
         if isinstance(arg, LispQuotedNode):
             return self._parse_key_sig_quoted(arg.value)
 
         return None
-
-    def _parse_key_sig_string(self, s: str) -> dict[str, str]:
-        """Parse key signature from string format like 'f+ c+ g+'."""
-        key_sig: dict[str, str] = {}
-        tokens = s.lower().split()
-
-        for token in tokens:
-            if not token:
-                continue
-            note = token[0]
-            if note in "abcdefg":
-                accidentals = token[1:]
-                if "+" in accidentals or "#" in accidentals:
-                    key_sig[note] = "+"
-                elif "-" in accidentals or "b" in accidentals:
-                    key_sig[note] = "-"
-
-        return key_sig
 
     def _parse_key_sig_quoted(self, node: LispListNode) -> dict[str, str] | None:
         """Parse key signature from quoted list format.
@@ -727,98 +877,7 @@ class MidiGenerator(ASTVisitor):
                     symbols.append(elem.elements[0].name.lower())
             i += 1
 
-        if not symbols:
-            return None
-
-        # Check for explicit accidentals format: e flat b flat
-        if len(symbols) >= 2 and symbols[1] in ("flat", "sharp"):
-            return self._parse_explicit_accidentals(symbols)
-
-        # Check for key name: g minor, d major, c ionian
-        if len(symbols) >= 2:
-            key_name = " ".join(symbols)
-            if key_name in KEY_SIGNATURES:
-                return KEY_SIGNATURES[key_name].copy()
-
-            # Try with root + mode/quality
-            root = symbols[0]
-            quality = symbols[1]
-
-            # Handle modes on any root
-            if quality in MODE_INTERVALS:
-                return self._calculate_mode_key_sig(root, quality)
-
-        return None
-
-    def _parse_explicit_accidentals(self, symbols: list[str]) -> dict[str, str]:
-        """Parse explicit accidentals like: e flat b flat."""
-        key_sig: dict[str, str] = {}
-        i = 0
-        while i < len(symbols):
-            if symbols[i] in "abcdefg" and i + 1 < len(symbols):
-                note = symbols[i]
-                acc = symbols[i + 1]
-                if acc == "flat":
-                    key_sig[note] = "-"
-                    i += 2
-                elif acc == "sharp":
-                    key_sig[note] = "+"
-                    i += 2
-                else:
-                    i += 1
-            else:
-                i += 1
-        return key_sig
-
-    def _calculate_mode_key_sig(self, root: str, mode: str) -> dict[str, str] | None:
-        """Calculate key signature for a mode on any root.
-
-        For example, D dorian uses the same notes as C major.
-        """
-        if mode not in MODE_INTERVALS:
-            return None
-
-        # Note to semitone mapping
-        note_semitones = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
-
-        # Handle accidentals in root
-        root_note = root[0] if root else ""
-        if root_note not in note_semitones:
-            return None
-
-        root_semitone = note_semitones[root_note]
-        if len(root) > 1:
-            if root[1] in "#+":
-                root_semitone += 1
-            elif root[1] in "-b":
-                root_semitone -= 1
-        root_semitone = root_semitone % 12
-
-        # Calculate the parent major scale
-        mode_offset = MODE_INTERVALS[mode]
-        parent_semitone = (root_semitone - mode_offset) % 12
-
-        # Find the parent major key
-        semitone_to_major = {
-            0: "c major",
-            1: "db major",
-            2: "d major",
-            3: "eb major",
-            4: "e major",
-            5: "f major",
-            6: "gb major",
-            7: "g major",
-            8: "ab major",
-            9: "a major",
-            10: "bb major",
-            11: "b major",
-        }
-
-        parent_major = semitone_to_major.get(parent_semitone)
-        if parent_major and parent_major in KEY_SIGNATURES:
-            return KEY_SIGNATURES[parent_major].copy()
-
-        return None
+        return key_signature_from_symbols(symbols)
 
     def visit_VariableDefinitionNode(self, node: VariableDefinitionNode) -> None:
         """Process a variable definition (store only, don't emit sound)."""
@@ -829,7 +888,11 @@ class MidiGenerator(ASTVisitor):
         if node.name in self.state.variables:
             self.visit(self.state.variables[node.name])
         else:
-            self._warn(f"Undefined variable {node.name!r}.", node.position)
+            self._warn(
+                f"Undefined variable {node.name!r}.",
+                node.position,
+                code="undefined-variable",
+            )
 
     def visit_MarkerNode(self, node: MarkerNode) -> None:
         """Process a marker definition."""
@@ -843,7 +906,11 @@ class MidiGenerator(ASTVisitor):
             for part in self._get_all_part_states():
                 part.current_time = target_time
         else:
-            self._warn(f"Undefined marker {node.name!r}.", node.position)
+            self._warn(
+                f"Undefined marker {node.name!r}.",
+                node.position,
+                code="undefined-marker",
+            )
 
     def visit_VoiceGroupNode(self, node: VoiceGroupNode) -> None:
         """Process a voice group."""
@@ -946,7 +1013,7 @@ class MidiGenerator(ASTVisitor):
         for component in duration.components:
             if isinstance(component, NoteLengthNode):
                 # Calculate base duration (4 = quarter note = 1 beat)
-                beats = 4.0 / component.denominator
+                beats = BEATS_PER_WHOLE_NOTE / component.denominator
 
                 # Apply dots
                 dot_value = beats
@@ -959,12 +1026,12 @@ class MidiGenerator(ASTVisitor):
             elif isinstance(component, NoteLengthMsNode):
                 # Convert ms to beats
                 ms = component.ms
-                beats_per_second = part.tempo / 60.0
-                total_beats += (ms / 1000.0) * beats_per_second
+                beats_per_second = part.tempo / SECONDS_PER_MINUTE
+                total_beats += (ms / MILLISECONDS_PER_SECOND) * beats_per_second
 
             elif isinstance(component, NoteLengthSecondsNode):
                 # Convert seconds to beats
-                beats_per_second = part.tempo / 60.0
+                beats_per_second = part.tempo / SECONDS_PER_MINUTE
                 total_beats += component.seconds * beats_per_second
 
         return total_beats
@@ -979,7 +1046,7 @@ class MidiGenerator(ASTVisitor):
         Returns:
             Duration in seconds.
         """
-        return beats * 60.0 / tempo
+        return beats * SECONDS_PER_MINUTE / tempo
 
     def _count_sounding_events(self, sequence: EventSequenceNode) -> int:
         """Count the number of note/rest events in a sequence."""

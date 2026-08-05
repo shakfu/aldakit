@@ -6,22 +6,21 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .ast_nodes import EventSequenceNode, PartNode, RootNode
+from .ast_nodes import RootNode
 from .constants import POLL_INTERVAL_PLAYBACK
 from .midi.backends import LibremidiBackend
 from .midi.generator import Diagnostic, MidiGenerator
 from .midi.smf import write_midi_file
-from .parser import parse
+from .score_content import (
+    ElementsContent,
+    ImportedContent,
+    ScoreContent,
+    SourceContent,
+)
 
 if TYPE_CHECKING:
     from .compose.base import ComposeElement
     from .midi.types import MidiSequence
-
-
-# Mode constants for internal state
-_MODE_SOURCE = "source"
-_MODE_ELEMENTS = "elements"
-_MODE_MIDI = "midi"
 
 
 def _ast_to_alda(ast: RootNode) -> str:
@@ -136,13 +135,25 @@ class Score:
             source: Alda source code string.
             filename: Optional filename for error messages.
         """
-        self._mode = _MODE_SOURCE
-        self._source = source
-        self._filename = filename
-        self._elements: list[ComposeElement] = []
-        self._imported_ast: RootNode | None = None
+        self._init(SourceContent(source, filename))
+
+    def _init(self, content: ScoreContent) -> None:
+        """Set up a score around the content it is built from."""
+        self._content = content
         self._diagnostics: list[Diagnostic] = []
         self._playback: PlaybackHandle | None = None
+
+    @classmethod
+    def _with_content(cls, content: ScoreContent) -> Score:
+        """Build a score from content other than Alda source.
+
+        The public constructor takes source text, so the alternate
+        constructors go through here rather than each setting up state by
+        hand.
+        """
+        score = cls.__new__(cls)
+        score._init(content)
+        return score
 
     @classmethod
     def from_source(cls, source: str, filename: str = "<input>") -> Score:
@@ -221,15 +232,7 @@ class Score:
         midi_sequence = read_midi_file(path)
         ast = midi_to_ast(midi_sequence, quantize_grid=quantize_grid)
 
-        score = cls.__new__(cls)
-        score._mode = _MODE_MIDI
-        score._source = ""
-        score._filename = str(path)
-        score._elements = []
-        score._imported_ast = ast
-        score._diagnostics = []
-        score._playback = None
-        return score
+        return cls._with_content(ImportedContent(ast, filename=str(path)))
 
     @classmethod
     def from_elements(cls, *elements: ComposeElement) -> Score:
@@ -251,15 +254,7 @@ class Score:
             ...     note("e"),
             ... )
         """
-        score = cls.__new__(cls)
-        score._mode = _MODE_ELEMENTS
-        score._source = ""
-        score._filename = "<compose>"
-        score._elements = list(elements)
-        score._imported_ast = None
-        score._diagnostics = []
-        score._playback = None
-        return score
+        return cls._with_content(ElementsContent(list(elements)))
 
     @classmethod
     def from_parts(cls, *parts: Any) -> Score:
@@ -277,20 +272,23 @@ class Score:
 
     @property
     def source(self) -> str:
-        """The original Alda source code (if created from source)."""
-        return self._source
+        """The original Alda source code (empty unless created from source)."""
+        return self._content.source
+
+    @property
+    def elements(self) -> list[ComposeElement]:
+        """The compose elements this score was built from.
+
+        Empty for scores created from source or imported from MIDI. The list
+        is a copy: use :meth:`add` to extend the score, so its cached AST and
+        MIDI are invalidated.
+        """
+        return list(self._content.elements)
 
     @cached_property
     def ast(self) -> RootNode:
         """The parsed AST (lazily computed and cached)."""
-        if self._mode == _MODE_SOURCE:
-            return parse(self._source, self._filename)
-        elif self._mode == _MODE_MIDI:
-            # AST was imported from MIDI file
-            assert self._imported_ast is not None
-            return self._imported_ast
-        else:
-            return self._build_ast_from_elements()
+        return self._content.build_ast()
 
     @cached_property
     def midi(self) -> MidiSequence:
@@ -321,58 +319,6 @@ class Score:
         """Total duration of the score in seconds."""
         return self.midi.duration()
 
-    def _build_ast_from_elements(self) -> RootNode:
-        """Build AST directly from compose elements."""
-        from .ast_nodes import PartDeclarationNode
-
-        from .compose.base import OctaveContext
-        from .compose.part import Part
-
-        octave_ctx = OctaveContext()
-        children = []
-        current_events: list = []
-        current_part_decl: PartDeclarationNode | None = None
-
-        def flush_part():
-            """Flush accumulated events, wrapping in PartNode if there's a declaration."""
-            nonlocal current_events, current_part_decl
-            if current_part_decl is not None:
-                # Wrap declaration and events in a PartNode
-                children.append(
-                    PartNode(
-                        declaration=current_part_decl,
-                        events=EventSequenceNode(events=current_events, position=None),
-                        position=None,
-                    )
-                )
-                current_part_decl = None
-                current_events = []
-            elif current_events:
-                # No part declaration - bare event sequence
-                children.append(EventSequenceNode(events=current_events, position=None))
-                current_events = []
-
-        for element in self._elements:
-            # to_events() threads octave state, so notes that declare an
-            # octave emit the octave change the AST needs to reproduce them.
-            ast_nodes = element.to_events(octave_ctx)
-
-            if isinstance(element, Part):
-                # Flush previous part first
-                flush_part()
-                # Start new part - Part.to_events() returns a PartDeclarationNode
-                assert len(ast_nodes) == 1
-                assert isinstance(ast_nodes[0], PartDeclarationNode)
-                current_part_decl = ast_nodes[0]
-            else:
-                # Accumulate events
-                current_events.extend(ast_nodes)
-
-        # Flush remaining content
-        flush_part()
-
-        return RootNode(children=children, position=None)
-
     def _invalidate_cache(self) -> None:
         """Invalidate cached properties after modification."""
         # Delete cached properties if they exist
@@ -397,12 +343,12 @@ class Score:
         Raises:
             ValueError: If the score was created from source code.
         """
-        if self._mode != _MODE_ELEMENTS:
+        if not self._content.is_mutable:
             raise ValueError(
                 "Cannot add elements to this score. "
                 "Use Score.from_elements() to create a modifiable score."
             )
-        self._elements.extend(elements)
+        self._content.elements.extend(elements)
         self._invalidate_cache()
         return self
 
@@ -455,19 +401,7 @@ class Score:
         Returns:
             Alda source code string.
         """
-        if self._mode == _MODE_SOURCE:
-            return self._source
-        elif self._mode == _MODE_MIDI:
-            # Generate Alda from AST
-            return _ast_to_alda(self.ast)
-        else:
-            from .compose.base import OctaveContext
-
-            ctx = OctaveContext()
-            parts: list[str] = []
-            for element in self._elements:
-                parts.extend(element.to_alda_parts(ctx))
-            return " ".join(parts)
+        return self._content.to_alda()
 
     def _make_backend(self, backend: str, port: str | None, soundfont: str | None):
         """Create the requested playback backend."""
@@ -556,15 +490,4 @@ class Score:
             write_midi_file(self.midi, path)
 
     def __repr__(self) -> str:
-        if self._mode == _MODE_SOURCE:
-            # Show first 50 chars of source, truncated if longer
-            preview = self._source[:50]
-            if len(self._source) > 50:
-                preview += "..."
-            preview = preview.replace("\n", "\\n")
-            return f"Score({preview!r})"
-        elif self._mode == _MODE_MIDI:
-            return f"Score.from_midi_file({self._filename!r})"
-        else:
-            n = len(self._elements)
-            return f"Score.from_elements(<{n} elements>)"
+        return self._content.describe()

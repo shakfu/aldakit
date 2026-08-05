@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.io) music programming language[^1].
+A Python parser and MIDI generator for the [Alda](https://alda.io) music programming language, with no install-time dependencies[^1].
 
 [^1]: Includes a rich REPL, native MIDI, and built-in audio via bundled [prompt-toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit), [libremidi](https://github.com/jcelerier/libremidi), and [TinySoundFont](https://github.com/schellingb/TinySoundFont) respectively.
 
@@ -22,6 +22,8 @@ A zero-dependency Python parser and MIDI generator for the [Alda](https://alda.i
 - **Transformers** - Transpose, invert, augment, diminish, and more
 - **Generative Music** - Markov chains, L-systems, cellular automata, Euclidean rhythms
 - **Interactive REPL** - Syntax highlighting, auto-completion, and live playback
+- **Score Checking** - `aldakit lint` and `aldakit info` report what will sound wrong before you play it
+- **SoundFont Management** - Find, download and verify SoundFonts from the CLI
 - **CLI Tools** - Play, transcribe, and convert from the command line
 
 ## Installation
@@ -65,6 +67,13 @@ aldakit repl -a
 
 # Create virtual MIDI port with custom name
 aldakit repl -vp MyMIDI
+
+# Get a SoundFont for the built-in audio backend
+aldakit soundfont install
+
+# Inspect or check a score without playing it
+aldakit info examples/twinkle.alda
+aldakit lint examples/twinkle.alda
 ```
 
 ### Python API
@@ -331,6 +340,30 @@ Melodic parts never use that channel. There are 15 melodic channels, so a score
 with more than 15 pitched parts reports a diagnostic that instrument assignments
 will collide.
 
+### Inspecting and Checking a Score
+
+The problems the generator finds are available as values, not just as CLI
+output, so a build step or an editor plugin can use them:
+
+```python
+from aldakit import inspect_score, lint_score
+
+info = inspect_score("piano: c d e\ncello: c2")
+print(info.note_count, info.duration)
+for part in info.parts:
+    print(part.name, part.instrument, part.channel, part.note_count)
+
+for finding in lint_score("piano: nosuchvar"):
+    print(finding.severity, finding.code, finding.message)
+    # error undefined-variable Undefined variable 'nosuchvar'.
+```
+
+`lint_score()` reports unknown instruments and attributes, undefined variables
+and markers, notes clamped into the MIDI range, unused and redefined variables,
+and parts that collide on a channel. Each finding carries a `code`, a
+`severity` and the source position. The `aldakit info` and `aldakit lint`
+commands are thin wrappers over these two functions.
+
 ### Scales and Chords
 
 Build melodies and harmonies using music theory helpers:
@@ -519,7 +552,7 @@ score.play()
 ## CLI Reference
 
 ```sh
-aldakit [--version] [-h] {repl,play,eval,ports,transcribe} ...
+aldakit [--version] [-h] {repl,play,eval,info,lint,ports,soundfont,transcribe} ...
 ```
 
 ### Subcommands
@@ -530,7 +563,10 @@ aldakit [--version] [-h] {repl,play,eval,ports,transcribe} ...
 | `repl` | Interactive REPL with syntax highlighting and auto-completion |
 | `play` | Play an Alda file |
 | `eval` | Evaluate Alda code directly |
+| `info` | Summarise a score: parts, instruments, channels, duration |
+| `lint` | Report problems in a score without playing it |
 | `ports` | List available MIDI ports (both input and output) |
+| `soundfont` | Find, download and verify SoundFonts for the audio backend |
 | `transcribe` | Record MIDI input and output Alda code |
 
 ### Global Options
@@ -543,12 +579,13 @@ aldakit [--version] [-h] {repl,play,eval,ports,transcribe} ...
 ### `play` Subcommand
 
 ```sh
-aldakit play [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--stdin] [--parse-only] [--no-wait] FILE
+aldakit play [-v] [-e CODE] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--stdin] [--parse-only] [--no-wait] FILE
 ```
 
 | Option | Description |
 | ------ | ----------- |
 | `FILE` | Alda file to play (use `-` for stdin) |
+| `-e, --eval CODE` | Play Alda code given on the command line instead of a file |
 | `-v, --verbose` | Verbose output |
 | `-o, --output FILE` | Save to MIDI file instead of playing |
 | `--port NAME\|INDEX` | MIDI port by name or index (see `aldakit ports`) |
@@ -562,7 +599,7 @@ aldakit play [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--st
 ### `eval` Subcommand
 
 ```sh
-aldakit eval [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-only] [--no-wait] CODE
+aldakit eval [-v] [-o FILE] [-p NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-only] [--no-wait] CODE
 ```
 
 | Option | Description |
@@ -572,7 +609,7 @@ aldakit eval [-v] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--pa
 | `--parse-only` | Print AST without playing |
 | `--no-wait` | Return without waiting for playback to finish |
 | `-o, --output FILE` | Save to MIDI file instead of playing |
-| `--port NAME\|INDEX` | MIDI port by name or index |
+| `-p, --port NAME\|INDEX` | MIDI port by name or index |
 | `-sf, --soundfont FILE` | Use TinySoundFont audio backend |
 | `-a, --audio` | Use audio backend with pre-configured soundfont |
 | `-vp, --virtual-port NAME` | Custom virtual MIDI port name (default: AldakitMIDI) |
@@ -592,6 +629,70 @@ aldakit repl [-v] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--sequential] 
 | `-a, --audio` | Use audio backend with pre-configured soundfont |
 | `-vp, --virtual-port NAME` | Custom virtual MIDI port name (default: AldakitMIDI) |
 | `--sequential` | Start in sequential mode (wait for each input) |
+
+### `soundfont` Subcommand
+
+The audio backend needs a General MIDI SoundFont. This finds, fetches and
+checks them; downloads land in `~/.aldakit/soundfonts/` and are verified
+against a SHA256 checksum.
+
+```sh
+aldakit soundfont list              # installed files and the download catalog
+aldakit soundfont install           # fetch the default (TimGM6mb, 5.8 MB)
+aldakit soundfont install FluidR3_GM --force
+aldakit soundfont install --all
+aldakit soundfont verify            # re-check the downloaded files
+aldakit soundfont path              # print the one playback would use
+```
+
+If you ask for audio playback and no SoundFont can be found, aldakit offers to
+download one, so the usual first run is a single prompt rather than an error.
+Non-interactive runs (scripts, CI) get the error instead of a prompt.
+
+### `info` Subcommand
+
+```sh
+aldakit info song.alda
+aldakit info -e "piano: c d e"
+```
+
+Prints the parts, their instruments, MIDI programs, channels and note counts,
+along with the tempo, duration, variables and markers:
+
+```
+song.alda
+  parts:    2
+  notes:    5
+  duration: 0:02.0 (2.00s)
+  tempo:    90 bpm
+
+  part   instrument                 prog  chan   notes
+  ---------------------------------------------------
+  piano  midi-acoustic-grand-piano     0     0       3
+  cello  midi-cello                   42     1       2
+```
+
+### `lint` Subcommand
+
+```sh
+aldakit lint song.alda
+aldakit lint -e "piano: c" --strict
+```
+
+Reports what will make a score sound wrong without playing it: unknown
+instruments, undefined variables and markers, unknown attributes, notes clamped
+into the MIDI range, unused variables, and parts that collide on a channel.
+
+| Option | Description |
+| ------ | ----------- |
+| `FILE` | Alda file to check (use `-` for stdin) |
+| `-e, --eval CODE` | Check Alda code given on the command line |
+| `-q, --quiet` | Print nothing; report through the exit status |
+| `--strict` | Exit non-zero on warnings as well as errors |
+
+Exit status is 0 when clean, 1 when an error was found (or any finding under
+`--strict`), and 2 when the score does not parse -- so `aldakit lint --strict`
+works as a build step.
 
 ### `transcribe` Subcommand
 

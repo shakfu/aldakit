@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from .base import ComposeElement, OctaveContext
+from ..theory import PITCH_SEMITONES, SEMITONE_PITCHES, accidental_offset
+from .base import DEFAULT_OCTAVE, ComposeElement, OctaveContext
+from .duration import build_duration_node, format_duration
 
 if TYPE_CHECKING:
     from ..ast_nodes import ASTNode
@@ -17,9 +19,7 @@ from ..ast_nodes import (
     DurationNode,
     EventSequenceNode,
     MarkerNode,
-    NoteLengthMsNode,
     NoteLengthNode,
-    NoteLengthSecondsNode,
     NoteNode,
     OctaveSetNode,
     RepeatNode,
@@ -30,13 +30,9 @@ from ..ast_nodes import (
     VoiceNode,
 )
 
-# Accidental characters Alda understands: sharp, flat, natural.
+# Accidental characters Alda understands: sharp, flat, natural. Alda writes
+# these as symbols, so "#" and "b" are not accepted here.
 _VALID_ACCIDENTALS = frozenset("+-_")
-
-# Pitch to semitone offset from C
-_PITCH_OFFSETS = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
-_SEMITONE_TO_PITCH = ["c", "c", "d", "d", "e", "f", "f", "g", "g", "a", "a", "b"]
-_SEMITONE_ACCIDENTALS = ["", "+", "", "+", "", "", "+", "", "+", "", "+", ""]
 
 
 @dataclass(frozen=True)
@@ -64,7 +60,7 @@ class Note(ComposeElement):
 
     def __post_init__(self) -> None:
         # Validate pitch
-        if self.pitch.lower() not in _PITCH_OFFSETS:
+        if self.pitch.lower() not in PITCH_SEMITONES:
             raise ValueError(f"Invalid pitch: {self.pitch}. Must be a-g.")
 
         # Validate accidentals
@@ -97,34 +93,9 @@ class Note(ComposeElement):
 
     def _build_duration_node(self) -> DurationNode | None:
         """Build duration node from duration parameters."""
-        if self.ms is not None:
-            return DurationNode(
-                components=[NoteLengthMsNode(ms=self.ms, position=None)],
-                position=None,
-            )
-        elif self.seconds is not None:
-            return DurationNode(
-                components=[NoteLengthSecondsNode(seconds=self.seconds, position=None)],
-                position=None,
-            )
-        elif self.duration is not None:
-            return DurationNode(
-                components=[
-                    NoteLengthNode(
-                        denominator=self.duration, dots=self.dots, position=None
-                    )
-                ],
-                position=None,
-            )
-        elif self.dots > 0:
-            # Dots without explicit duration - use default quarter note
-            return DurationNode(
-                components=[
-                    NoteLengthNode(denominator=4, dots=self.dots, position=None)
-                ],
-                position=None,
-            )
-        return None
+        return build_duration_node(
+            duration=self.duration, dots=self.dots, ms=self.ms, seconds=self.seconds
+        )
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
@@ -135,13 +106,9 @@ class Note(ComposeElement):
             result += self.accidental
 
         # Duration
-        if self.ms is not None:
-            result += f"{int(self.ms)}ms"
-        elif self.seconds is not None:
-            result += f"{self.seconds}s"
-        elif self.duration is not None:
-            result += str(self.duration)
-            result += "." * self.dots
+        result += format_duration(
+            duration=self.duration, dots=self.dots, ms=self.ms, seconds=self.seconds
+        )
 
         # Slur
         if self.slurred:
@@ -173,18 +140,9 @@ class Note(ComposeElement):
 
         Uses octave 4 as default if not specified.
         """
-        oct = self.octave if self.octave is not None else 4
-        base = _PITCH_OFFSETS[self.pitch.lower()]
-
-        # Apply accidentals
-        offset = 0
-        if self.accidental:
-            for acc in self.accidental:
-                if acc == "+":
-                    offset += 1
-                elif acc == "-":
-                    offset -= 1
-                # "_" (natural) doesn't change offset
+        oct = self.octave if self.octave is not None else DEFAULT_OCTAVE
+        base = PITCH_SEMITONES[self.pitch.lower()]
+        offset = accidental_offset(self.accidental or "")
 
         return (oct + 1) * 12 + base + offset
 
@@ -209,8 +167,7 @@ class Note(ComposeElement):
         new_octave = (new_midi // 12) - 1
         semitone_in_octave = new_midi % 12
 
-        new_pitch = _SEMITONE_TO_PITCH[semitone_in_octave]
-        new_accidental = _SEMITONE_ACCIDENTALS[semitone_in_octave] or None
+        new_pitch, new_accidental = SEMITONE_PITCHES[semitone_in_octave]
 
         return replace(
             self, pitch=new_pitch, octave=new_octave, accidental=new_accidental
@@ -263,40 +220,15 @@ class Rest(ComposeElement):
 
     def _build_duration_node(self) -> DurationNode | None:
         """Build duration node from duration parameters."""
-        if self.ms is not None:
-            return DurationNode(
-                components=[NoteLengthMsNode(ms=self.ms, position=None)],
-                position=None,
-            )
-        elif self.seconds is not None:
-            return DurationNode(
-                components=[NoteLengthSecondsNode(seconds=self.seconds, position=None)],
-                position=None,
-            )
-        elif self.duration is not None:
-            return DurationNode(
-                components=[
-                    NoteLengthNode(
-                        denominator=self.duration, dots=self.dots, position=None
-                    )
-                ],
-                position=None,
-            )
-        return None
+        return build_duration_node(
+            duration=self.duration, dots=self.dots, ms=self.ms, seconds=self.seconds
+        )
 
     def to_alda(self) -> str:
         """Convert to Alda source code."""
-        result = "r"
-
-        if self.ms is not None:
-            result += f"{int(self.ms)}ms"
-        elif self.seconds is not None:
-            result += f"{self.seconds}s"
-        elif self.duration is not None:
-            result += str(self.duration)
-            result += "." * self.dots
-
-        return result
+        return "r" + format_duration(
+            duration=self.duration, dots=self.dots, ms=self.ms, seconds=self.seconds
+        )
 
 
 @dataclass(frozen=True)

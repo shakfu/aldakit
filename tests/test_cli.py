@@ -893,9 +893,7 @@ class TestMainAudioBackend:
         monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)
         # ...and any SoundFont installed on the machine running the tests,
         # otherwise this assertion depends on the developer's setup.
-        monkeypatch.setattr(
-            "aldakit.midi.soundfont.find_soundfont", lambda: None
-        )
+        monkeypatch.setattr("aldakit.midi.soundfont.find_soundfont", lambda: None)
 
         test_file = tmp_path / "test.alda"
         test_file.write_text("piano: c d e", encoding="utf-8")
@@ -1029,9 +1027,7 @@ class TestMainRepl:
 
         monkeypatch.setattr("aldakit.cli.LibremidiBackend", DummyBackend)
         monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)
-        monkeypatch.setattr(
-            "aldakit.midi.soundfont.find_soundfont", lambda: None
-        )
+        monkeypatch.setattr("aldakit.midi.soundfont.find_soundfont", lambda: None)
 
         result = main(["repl", "-a"])
         assert result == 1

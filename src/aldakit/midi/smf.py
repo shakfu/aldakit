@@ -3,6 +3,14 @@
 import struct
 from pathlib import Path
 
+from ..constants import (
+    MIDI_CHANNEL_MASK,
+    MIDI_DATA_MASK,
+    MIDI_STATUS_CONTROL_CHANGE,
+    MIDI_STATUS_NOTE_OFF,
+    MIDI_STATUS_NOTE_ON,
+    MIDI_STATUS_PROGRAM_CHANGE,
+)
 from .types import MidiSequence
 
 
@@ -215,7 +223,12 @@ def _build_channel_track(
         if pc.channel == channel:
             tick = tempo_map.seconds_to_ticks(pc.time)
             # Program change: Cn pp
-            msg = bytes([0xC0 | (channel & 0x0F), pc.program & 0x7F])
+            msg = bytes(
+                [
+                    MIDI_STATUS_PROGRAM_CHANGE | (channel & MIDI_CHANNEL_MASK),
+                    pc.program & MIDI_DATA_MASK,
+                ]
+            )
             events.append((tick, msg))
 
     # Add control changes
@@ -223,7 +236,13 @@ def _build_channel_track(
         if cc.channel == channel:
             tick = tempo_map.seconds_to_ticks(cc.time)
             # Control change: Bn cc vv
-            msg = bytes([0xB0 | (channel & 0x0F), cc.control & 0x7F, cc.value & 0x7F])
+            msg = bytes(
+                [
+                    MIDI_STATUS_CONTROL_CHANGE | (channel & MIDI_CHANNEL_MASK),
+                    cc.control & MIDI_DATA_MASK,
+                    cc.value & MIDI_DATA_MASK,
+                ]
+            )
             events.append((tick, msg))
 
     # Add note on/off events
@@ -234,16 +253,26 @@ def _build_channel_track(
 
             # Note on: 9n kk vv
             note_on = bytes(
-                [0x90 | (channel & 0x0F), note.pitch & 0x7F, note.velocity & 0x7F]
+                [
+                    MIDI_STATUS_NOTE_ON | (channel & MIDI_CHANNEL_MASK),
+                    note.pitch & MIDI_DATA_MASK,
+                    note.velocity & MIDI_DATA_MASK,
+                ]
             )
             # Note off: 8n kk vv
-            note_off = bytes([0x80 | (channel & 0x0F), note.pitch & 0x7F, 0])
+            note_off = bytes(
+                [
+                    MIDI_STATUS_NOTE_OFF | (channel & MIDI_CHANNEL_MASK),
+                    note.pitch & MIDI_DATA_MASK,
+                    0,
+                ]
+            )
 
             events.append((start_tick, note_on))
             events.append((end_tick, note_off))
 
     # Sort events: by tick, then note_off before note_on at same tick
-    events.sort(key=lambda e: (e[0], e[1][0] & 0xF0 != 0x80))
+    events.sort(key=lambda e: (e[0], e[1][0] & 0xF0 != MIDI_STATUS_NOTE_OFF))
 
     # End of track
     if events:

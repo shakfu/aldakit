@@ -265,7 +265,11 @@ Controls note articulation (percentage of duration actually sounded):
 (quant 90)         # Default (slightly detached)
 (quant 50)         # Staccato (half duration)
 (quantization 80)  # Full name
+(quant! 95)        # Global form: applies to every part
 ```
+
+Any attribute can be written with a trailing `!` to apply it to the whole
+score rather than the current part, including parts declared later.
 
 ### Panning
 
@@ -273,7 +277,40 @@ Controls note articulation (percentage of duration actually sounded):
 (panning 0)        # Hard left
 (panning 50)       # Center
 (panning 100)      # Hard right
+(pan 25)           # Shorthand
 ```
+
+### Track volume
+
+The instrument's overall level (MIDI channel volume), as opposed to `volume`,
+which sets the velocity of individual notes:
+
+```alda
+(track-volume 80)  # 0-100 scale
+(track-vol 100)    # Shorthand
+```
+
+### Default note length
+
+The length a note gets when it does not spell one out:
+
+```alda
+(set-duration 2)      # Two beats, i.e. a half note
+(set-duration 2.5)    # A dotted half note
+(set-note-length 1)   # A whole note, given as a note value
+(set-duration-ms 500) # Half a second, converted at the part's tempo
+```
+
+### MIDI channel
+
+Parts are assigned a channel automatically. To choose one:
+
+```alda
+piano: (midi-channel 2) c d e
+```
+
+Channel 9 is reserved for percussion, so a melodic part asking for it is
+reported by `aldakit lint` and left where it was.
 
 ### Octave
 
@@ -290,6 +327,7 @@ Transpose all subsequent notes by a number of semitones:
 (transpose -7)     # Transpose down a perfect fifth
 (transpose 12)     # Transpose up one octave
 (transpose 0)      # Reset to no transposition
+(transposition 3)  # Full name
 ```
 
 Transposing instruments (e.g., clarinet in Bb, horn in F):
@@ -472,8 +510,12 @@ c d e    # Inline comment
 - Volume
 - All dynamic markings (pppppp to ffffff)
 - Quantization
-- Panning
+- Panning (`panning`, `pan`)
+- Track volume (`track-volume`, `track-vol`)
+- Default note length (`set-duration`, `set-note-length`, `set-duration-ms`)
+- Explicit MIDI channel assignment (`midi-channel`)
 - Octave attribute
+- The global (`!`) form of every attribute
 - Variables (definition and reference)
 - Markers and marker jumps
 - Voices (V1-V8, V0)
@@ -485,9 +527,20 @@ c d e    # Inline comment
 
 ### Recently Added
 
-- Transposition (`transpose`) - fully supported with semitone offsets
+- Transposition (`transpose`, `transposition`) - fully supported with semitone offsets
 - Key signature (`key-sig`, `key-signature`) - fully supported with string and quoted list formats
 - Quoted list syntax in S-expressions (`'(g minor)`) - now fully supported
+
+### Known Limitations
+
+- **Channel reuse.** A part keeps its MIDI channel for the whole score, where
+  Alda frees a channel once a part has stopped sounding. A score with more than
+  15 pitched parts therefore has parts sharing a channel and colliding on
+  instrument; `aldakit lint` reports it. This affects
+  `examples/all-instruments.alda` and `examples/midi-channel-management.alda`.
+
+- An attribute aldakit does not recognise is reported by `aldakit lint` and
+  ignored, rather than stopping generation.
 
 ---
 

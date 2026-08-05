@@ -13,10 +13,14 @@ class ASTNode(ABC):
 
     position: SourcePosition | None = None
 
-    @abstractmethod
     def accept(self, visitor: "ASTVisitor") -> object:
-        """Accept a visitor for tree traversal."""
-        pass
+        """Accept a visitor for tree traversal.
+
+        Dispatch lives in :meth:`ASTVisitor.visit`, which routes on the node's
+        type name, so every node accepts a visitor the same way and nodes do
+        not each carry a copy of this method.
+        """
+        return visitor.visit(self)
 
     def __repr__(self) -> str:
         return self._repr_helper(0)
@@ -51,9 +55,6 @@ class RootNode(ASTNode):
     children: list[ASTNode] = field(default_factory=list)
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         lines = ["RootNode"]
         for child in self.children:
@@ -68,9 +69,6 @@ class PartNode(ASTNode):
     declaration: "PartDeclarationNode"
     events: "EventSequenceNode"
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         lines = ["PartNode"]
@@ -87,9 +85,6 @@ class PartDeclarationNode(ASTNode):
     alias: str | None = None
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         if self.alias:
             return f'PartDeclarationNode(names={self.names}, alias="{self.alias}")'
@@ -102,9 +97,6 @@ class EventSequenceNode(ASTNode):
 
     events: list[ASTNode] = field(default_factory=list)
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         if not self.events:
@@ -128,9 +120,6 @@ class NoteNode(ASTNode):
     slurred: bool = False  # True if followed by ~ connecting to next note
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         parts = [f"NoteNode(letter={self.letter!r}"]
         if self.accidentals:
@@ -149,9 +138,6 @@ class RestNode(ASTNode):
 
     duration: "DurationNode | None" = None
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         if self.duration:
@@ -173,9 +159,6 @@ class ChordNode(ASTNode):
     ]
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         lines = ["ChordNode"]
         for note in self.notes:
@@ -192,9 +175,6 @@ class DurationNode(ASTNode):
 
     components: list["DurationComponentNode"] = field(default_factory=list)
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         if len(self.components) == 1:
@@ -217,9 +197,6 @@ class NoteLengthNode(DurationComponentNode):
     dots: int = 0
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         if self.dots:
             return f"NoteLengthNode({self.denominator}, dots={self.dots})"
@@ -233,9 +210,6 @@ class NoteLengthMsNode(DurationComponentNode):
     ms: float
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return f"NoteLengthMsNode({self.ms}ms)"
 
@@ -247,9 +221,6 @@ class NoteLengthSecondsNode(DurationComponentNode):
     seconds: float
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return f"NoteLengthSecondsNode({self.seconds}s)"
 
@@ -259,9 +230,6 @@ class BarlineNode(ASTNode):
     """A barline (|) - mainly for visual organization."""
 
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return "BarlineNode()"
@@ -277,9 +245,6 @@ class OctaveSetNode(ASTNode):
     octave: int
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return f"OctaveSetNode({self.octave})"
 
@@ -290,9 +255,6 @@ class OctaveUpNode(ASTNode):
 
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return "OctaveUpNode()"
 
@@ -302,9 +264,6 @@ class OctaveDownNode(ASTNode):
     """Decrease octave by one (<)."""
 
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return "OctaveDownNode()"
@@ -319,9 +278,6 @@ class LispListNode(ASTNode):
 
     elements: list["LispNode"] = field(default_factory=list)
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         if not self.elements:
@@ -343,9 +299,6 @@ class LispSymbolNode(LispNode):
     name: str
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return self.name
 
@@ -356,9 +309,6 @@ class LispNumberNode(LispNode):
 
     value: int | float
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return str(self.value)
@@ -371,9 +321,6 @@ class LispStringNode(LispNode):
     value: str
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return f'"{self.value}"'
 
@@ -384,9 +331,6 @@ class LispQuotedNode(LispNode):
 
     value: "LispListNode | LispSymbolNode"
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return f"'{self.value._repr_helper(indent)}"
@@ -403,9 +347,6 @@ class VariableDefinitionNode(ASTNode):
     events: EventSequenceNode
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         lines = [f"VariableDefinitionNode(name={self.name!r})"]
         lines.append("  " * (indent + 1) + self.events._repr_helper(indent + 1))
@@ -418,9 +359,6 @@ class VariableReferenceNode(ASTNode):
 
     name: str
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return f"VariableReferenceNode({self.name!r})"
@@ -436,9 +374,6 @@ class MarkerNode(ASTNode):
     name: str
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         return f"MarkerNode({self.name!r})"
 
@@ -449,9 +384,6 @@ class AtMarkerNode(ASTNode):
 
     name: str
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         return f"AtMarkerNode({self.name!r})"
@@ -468,9 +400,6 @@ class VoiceNode(ASTNode):
     events: EventSequenceNode
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         lines = [f"VoiceNode(number={self.number})"]
         lines.append("  " * (indent + 1) + self.events._repr_helper(indent + 1))
@@ -483,9 +412,6 @@ class VoiceGroupNode(ASTNode):
 
     voices: list[VoiceNode] = field(default_factory=list)
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         lines = ["VoiceGroupNode"]
@@ -504,9 +430,6 @@ class CramNode(ASTNode):
     events: EventSequenceNode
     duration: DurationNode | None = None
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         parts = ["CramNode"]
@@ -527,9 +450,6 @@ class RepeatNode(ASTNode):
     event: ASTNode
     times: int
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         lines = [f"RepeatNode(times={self.times})"]
@@ -558,9 +478,6 @@ class OnRepetitionsNode(ASTNode):
     ranges: list[RepetitionRange] = field(default_factory=list)
     position: SourcePosition | None = None
 
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
-
     def _repr_helper(self, indent: int) -> str:
         ranges_str = ",".join(str(r) for r in self.ranges)
         lines = [f"OnRepetitionsNode(ranges=[{ranges_str}])"]
@@ -577,9 +494,6 @@ class BracketedSequenceNode(ASTNode):
 
     events: EventSequenceNode
     position: SourcePosition | None = None
-
-    def accept(self, visitor: ASTVisitor) -> object:
-        return visitor.visit(self)
 
     def _repr_helper(self, indent: int) -> str:
         lines = ["BracketedSequenceNode"]

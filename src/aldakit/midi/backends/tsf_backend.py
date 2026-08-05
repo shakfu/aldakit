@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 
+from ...constants import DEFAULT_SOUNDFONT_GAIN
 from .base import MidiBackend
 from ..smf import write_midi_file
 from ..soundfont import find_soundfont, list_soundfonts
@@ -57,7 +58,7 @@ class TsfBackend(MidiBackend):
     def __init__(
         self,
         soundfont: str | Path | None = None,
-        gain: float = 1.0,
+        gain: float = DEFAULT_SOUNDFONT_GAIN,
     ):
         """Initialize the TinySoundFont backend.
 

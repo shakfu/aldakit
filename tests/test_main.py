@@ -96,7 +96,9 @@ class TestVersion:
         import aldakit
 
         pyproject = Path(__file__).parent.parent / "pyproject.toml"
-        declared = re.search(r'^version = "([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M)
+        declared = re.search(
+            r'^version = "([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M
+        )
         assert declared, "no version in pyproject.toml"
         assert aldakit.__version__ == declared.group(1)
 
@@ -106,7 +108,9 @@ class TestVersion:
 
         import aldakit
 
-        changelog = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+        changelog = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(
+            encoding="utf-8"
+        )
         assert f"## [{aldakit.__version__}]" in changelog, (
             f"CHANGELOG.md has no section for {aldakit.__version__}"
         )

@@ -28,9 +28,9 @@ MIDI_DRUM_CHANNEL = 9  # Channel 10 (0-indexed) is reserved for drums
 # Value limits
 MIDI_MAX_VELOCITY = 127
 MIDI_MIN_VELOCITY = 0
-MIDI_MAX_PROGRAM = 127
 MIDI_MAX_CONTROL_VALUE = 127
 MIDI_MAX_NOTE = 127
+MIDI_MIN_NOTE = 0
 
 # Status bytes (upper nibble)
 MIDI_STATUS_NOTE_OFF = 0x80
@@ -43,6 +43,7 @@ MIDI_CHANNEL_MASK = 0x0F  # Lower 4 bits for channel
 MIDI_DATA_MASK = 0x7F  # Lower 7 bits for data bytes
 
 # Control Change numbers
+MIDI_CC_VOLUME = 7  # Channel volume, what Alda calls track-volume
 MIDI_CC_PAN = 10
 MIDI_CC_ALL_NOTES_OFF = 123
 
@@ -92,22 +93,26 @@ BEATS_PER_WHOLE_NOTE = 4.0
 # DYNAMICS VELOCITY MAPPING
 # =============================================================================
 
-# Maps dynamic markings to MIDI velocity values (0-127)
-DYNAMICS_VELOCITY = {
-    "pppppp": 1,
-    "ppppp": 8,
-    "pppp": 16,
-    "ppp": 24,
-    "pp": 33,
-    "p": 49,
-    "mp": 64,
-    "mf": 69,  # Default
-    "f": 80,
-    "ff": 96,
-    "fff": 112,
-    "ffff": 120,
-    "fffff": 124,
-    "ffffff": 127,
+# Maps dynamic markings to MIDI velocity values (0-127).
+#
+# Alda defines dynamics as volume levels on a 0-100 scale, and volume maps to
+# velocity as velocity = volume * 127 / 100. The comment on each entry is the
+# volume it comes from.
+DYNAMICS_VELOCITY: dict[str, int] = {
+    "pppppp": 1,  # vol=1
+    "ppppp": 10,  # vol=8
+    "pppp": 20,  # vol=16
+    "ppp": 30,  # vol=24
+    "pp": 39,  # vol=31
+    "p": 50,  # vol=39
+    "mp": 58,  # vol=46
+    "mf": 69,  # vol=54, the default
+    "f": 79,  # vol=62
+    "ff": 88,  # vol=69
+    "fff": 98,  # vol=77
+    "ffff": 108,  # vol=85
+    "fffff": 117,  # vol=92
+    "ffffff": 127,  # vol=100
 }
 
 # =============================================================================
@@ -117,35 +122,6 @@ DYNAMICS_VELOCITY = {
 SOUNDFONT_ENV_VAR = "ALDAKIT_SOUNDFONT"
 DEFAULT_SOUNDFONT_GAIN = 1.0
 
-# Common SoundFont filenames to search for
-SOUNDFONT_NAMES = [
-    "FluidR3_GM.sf2",
-    "FluidR3_GS.sf2",
-    "GeneralUser GS.sf2",
-    "TimGM6mb.sf2",
-    "default.sf2",
-    "soundfont.sf2",
-    "gm.sf2",
-]
-
-# =============================================================================
-# ACCIDENTALS
-# =============================================================================
-
-ACCIDENTAL_SHARP_CHARS = ("+", "#")
-ACCIDENTAL_FLAT_CHARS = ("-", "b")
-ACCIDENTAL_NATURAL_CHAR = "_"
-
-# =============================================================================
-# MODE INTERVALS (semitones from root)
-# =============================================================================
-
-MODE_INTERVALS = {
-    "ionian": [0, 2, 4, 5, 7, 9, 11],  # major
-    "dorian": [0, 2, 3, 5, 7, 9, 10],
-    "phrygian": [0, 1, 3, 5, 7, 8, 10],
-    "lydian": [0, 2, 4, 6, 7, 9, 11],
-    "mixolydian": [0, 2, 4, 5, 7, 9, 10],
-    "aeolian": [0, 2, 3, 5, 7, 8, 10],  # natural minor
-    "locrian": [0, 1, 3, 5, 6, 8, 10],
-}
+# The filenames searched for on disk live with the discovery code, in
+# aldakit.midi.soundfont. Accidental characters, scale intervals, mode
+# intervals and key signatures live in aldakit.theory.

@@ -203,127 +203,85 @@ class methods for construction and instance methods for manipulation and output.
 
 ```python
 from aldakit import Score
-from aldakit.compose import note, rest, chord, seq, part, tempo
 
 class Score:
     """Unified score class for parsing, building, and playing music."""
 
-    # === Construction: Multiple Input Sources ===
+    # === Construction: one per kind of input ===
+
+    def __init__(self, source: str, filename: str = "<input>") -> None:
+        """Create from Alda source code."""
 
     @classmethod
     def from_source(cls, source: str, filename: str = "<input>") -> "Score":
-        """Create from Alda source code (current implementation)."""
-        ...
+        """Same as the constructor, spelled to match the others."""
 
     @classmethod
     def from_file(cls, path: str | Path) -> "Score":
-        """Create from .alda or .mid file."""
-        path = Path(path)
-        if path.suffix == ".alda":
-            return cls.from_source(path.read_text(), filename=str(path))
-        elif path.suffix in (".mid", ".midi"):
-            return cls._from_midi_file(path)
-        raise ValueError(f"Unsupported file type: {path.suffix}")
+        """Create from a .alda or .mid/.midi file, chosen by extension."""
 
     @classmethod
-    def from_elements(cls, *elements) -> "Score":
-        """Create from compose domain objects (notes, parts, etc.)."""
-        score = cls.__new__(cls)
-        score._elements = list(elements)
-        return score
+    def from_midi_file(cls, path: str | Path, *, quantize_grid: float = 0.25) -> "Score":
+        """Import a MIDI file: one part per channel, instruments preserved."""
 
     @classmethod
-    def from_parts(cls, *parts: "Part") -> "Score":
-        """Create from Part objects."""
-        return cls.from_elements(*parts)
+    def from_elements(cls, *elements: ComposeElement) -> "Score":
+        """Create from compose domain objects (notes, parts, attributes)."""
 
     @classmethod
-    def from_midi_file(cls, path: str | Path) -> "Score":
-        """Import a MIDI file."""
-        raise NotImplementedError("MIDI import not yet implemented")
+    def from_parts(cls, *parts: Part) -> "Score":
+        """Create from Part objects alone."""
 
-    # === Builder Methods (return self for chaining) ===
+    # === Builder methods (return self, so they chain) ===
 
-    def add(self, *elements) -> "Score":
-        """Add elements to the score."""
-        self._elements.extend(elements)
-        return self
+    def add(self, *elements: ComposeElement) -> "Score":
+        """Append elements. Only valid for a score built from elements."""
 
-    def with_part(self, *instruments, alias: str | None = None) -> "Score":
-        """Add a part declaration."""
-        return self.add(Part(*instruments, alias=alias))
+    def with_part(self, *instruments: str, alias: str | None = None) -> "Score": ...
+    def with_tempo(self, bpm: int | float, global_: bool = False) -> "Score": ...
+    def with_volume(self, level: int | float) -> "Score": ...
 
-    def with_tempo(self, bpm: int, global_: bool = False) -> "Score":
-        """Add tempo attribute."""
-        return self.add(tempo(bpm, global_=global_))
-
-    def with_notes(self, alda_string: str) -> "Score":
-        """Parse and add notes from Alda syntax snippet."""
-        parsed = parse(alda_string)
-        return self.add(*parsed.children)
-
-    def define(self, name: str, *elements) -> "Score":
-        """Define a variable."""
-        self._variables[name] = seq(*elements)
-        return self
-
-    def use(self, name: str) -> "Score":
-        """Reference a variable."""
-        return self.add(VarRef(name))
-
-    # === Properties (lazy, cached) ===
+    # === Properties (lazy, cached, invalidated by add()) ===
 
     @cached_property
-    def ast(self) -> "RootNode":
-        """The AST representation (built directly, not via text round-trip)."""
-        if hasattr(self, "_source"):
-            return parse(self._source, self._filename)
-        else:
-            return self._build_ast_from_elements()
+    def ast(self) -> RootNode:
+        """The AST, however this score was built."""
 
     @cached_property
-    def midi(self) -> "MidiSequence":
-        """The MIDI sequence."""
-        return generate_midi(self.ast)
+    def midi(self) -> MidiSequence:
+        """The generated MIDI sequence."""
 
     @property
-    def duration(self) -> float:
-        """Total duration in seconds."""
-        return self.midi.duration()
+    def diagnostics(self) -> list[Diagnostic]:
+        """Non-fatal problems found while generating MIDI."""
 
-    # === Output Methods ===
+    @property
+    def elements(self) -> list[ComposeElement]:
+        """The compose elements this score was built from (a copy)."""
+
+    @property
+    def source(self) -> str: ...
+    @property
+    def duration(self) -> float: ...
+
+    # === Output ===
 
     def to_alda(self) -> str:
-        """Export as Alda source code."""
-        if hasattr(self, "_source"):
-            return self._source
-        return "\n".join(e.to_alda() for e in self._elements)
+        """Export as Alda source."""
 
-    def play(self, port: str | None = None, wait: bool = True) -> None:
-        """Play the score."""
-        with LibremidiBackend(port_name=port) as backend:
-            backend.play(self.midi)
-            if wait:
-                while backend.is_playing():
-                    time.sleep(0.1)
+    def play(self, ..., wait: bool = True) -> PlaybackHandle | None:
+        """Play the score. With wait=False, returns a handle that owns the
+        backend, so playback continues until you stop it."""
 
     def save(self, path: str | Path) -> None:
-        """Save to file (.alda or .mid based on extension)."""
-        path = Path(path)
-        if path.suffix == ".alda":
-            path.write_text(self.to_alda())
-        elif path.suffix in (".mid", ".midi"):
-            LibremidiBackend().save(self.midi, path)
-        else:
-            raise ValueError(f"Unsupported file type: {path.suffix}")
-
-    # === Private Methods ===
-
-    def _build_ast_from_elements(self) -> "RootNode":
-        """Build AST directly from compose elements (no text round-trip)."""
-        children = [e.to_ast() for e in self._elements]
-        return RootNode(children=children, position=None)
+        """Save as .alda or .mid, chosen by extension."""
 ```
+
+Where a score's music comes from -- source text, compose elements, or an
+imported AST -- is a `ScoreContent` in `aldakit/score_content.py`. Each of the
+three answers the same three questions (build an AST, export Alda source,
+describe itself), so `Score` holds one of them rather than branching on how it
+was constructed.
 
 ## Use Cases
 
@@ -516,18 +474,30 @@ class Note:
 ```text
 src/aldakit/
   score.py              # Unified Score class
+  score_content.py      # Where a Score's music comes from: source, elements, import
   serialize.py          # AST -> Alda source (AldaWriter)
+  theory.py             # Pitch names, scale and mode intervals, key signatures
+  analysis.py           # Score inspection and linting (aldakit info / lint)
+  constants.py          # Defaults and MIDI protocol values
   compose/
     __init__.py         # Public API: note, rest, chord, seq, part, tempo, etc.
     core.py             # note(), rest(), chord(), seq() domain objects
+    duration.py         # Shared duration handling for notes and rests
     part.py             # Part, Voice
     attributes.py       # tempo(), volume(), octave(), dynamics
     chords.py           # Chord constructors: major(), minor(), dom7(), etc.
+    scales.py           # Scale and mode helpers over aldakit.theory
     transform.py        # AST-level transformers: transpose, invert, reverse
     generate.py         # Generative functions: euclidean, markov, etc.
   midi/
+    generator.py        # AST -> MidiSequence (an ASTVisitor)
     transform.py        # MIDI-level transformers: humanize, swing, quantize
 ```
+
+Facts that more than one layer needs -- pitch spellings, scale intervals, key
+signatures -- live in `theory.py`, and tunable defaults and MIDI protocol
+values live in `constants.py`. Neither imports the rest of the package, so
+either can be read without following the pipeline.
 
 ## Transformers
 

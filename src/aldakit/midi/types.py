@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from enum import IntEnum
 
+from ..constants import MIDI_MAX_NOTE, MIDI_MIN_NOTE
+from ..theory import PITCH_SEMITONES, accidental_offset
 from ._instruments import INSTRUMENT_PROGRAMS as _CANONICAL_PROGRAMS
 
 # Re-exported so callers can use aldakit.midi.types as the single entry point
@@ -315,31 +317,27 @@ class MidiSequence:
         return max(n.start_time + n.duration for n in self.notes)
 
 
-# Note letter to semitone offset (relative to C)
-NOTE_OFFSETS: dict[str, int] = {
-    "c": 0,
-    "d": 2,
-    "e": 4,
-    "f": 5,
-    "g": 7,
-    "a": 9,
-    "b": 11,
-}
+# Note letter to semitone offset (relative to C). Kept as an alias so callers
+# that import it from this module keep working; the table lives in theory.
+NOTE_OFFSETS = PITCH_SEMITONES
+
+
+def note_to_midi_raw(letter: str, octave: int, accidentals: list[str]) -> int:
+    """MIDI note number for a note, without clamping to the legal range.
+
+    Callers that want to report an out-of-range note rather than silently
+    move it use this and clamp themselves.
+    """
+    base = NOTE_OFFSETS[letter.lower()]
+    return 12 * (octave + 1) + base + accidental_offset(accidentals)
 
 
 def note_to_midi(letter: str, octave: int, accidentals: list[str]) -> int:
     """Convert a note letter, octave, and accidentals to MIDI note number.
 
-    C4 = MIDI 60 (middle C).
+    C4 = MIDI 60 (middle C). Naturals ("_") have no effect here: they cancel a
+    key signature, which the generator has already applied. The result is
+    clamped to 0-127.
     """
-    base = NOTE_OFFSETS[letter.lower()]
-    midi_note = 12 * (octave + 1) + base
-
-    for acc in accidentals:
-        if acc == "+":  # sharp
-            midi_note += 1
-        elif acc == "-":  # flat
-            midi_note -= 1
-        # "_" (natural) has no effect in this context
-
-    return max(0, min(127, midi_note))
+    midi_note = note_to_midi_raw(letter, octave, accidentals)
+    return max(MIDI_MIN_NOTE, min(MIDI_MAX_NOTE, midi_note))

@@ -63,7 +63,9 @@ class TestGoldenOutput:
     @pytest.mark.parametrize("path", _examples(), ids=lambda p: p.name)
     def test_example_matches_golden(self, path, golden):
         expected = golden[path.name]
-        actual = midi_fingerprint(generate_midi(parse(path.read_text(encoding="utf-8"), str(path))))
+        actual = midi_fingerprint(
+            generate_midi(parse(path.read_text(encoding="utf-8"), str(path)))
+        )
 
         # Compare event kinds separately so failures point at the right thing
         assert actual["program_changes"] == expected["program_changes"]
