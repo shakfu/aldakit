@@ -216,3 +216,6 @@ REVIEW.md
 CLAUDE.md
 AGENTS.md
 GEMINI.md
+
+# MkDocs build output
+site/

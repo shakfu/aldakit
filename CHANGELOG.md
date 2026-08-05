@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This release fixes fourteen defects that made scores sound wrong rather than
 fail. **Existing scores may sound different** -- see "Changed" for what moved.
 
+It also includes everything listed under 0.1.11 below, which was developed in
+parallel and merged in: visitor-based AST dispatch, error-message hints, the
+MkDocs site, and the opt-in publish/prerelease workflow.
+
 ### Fixed - correctness
 
 These all produced well-formed output that simply sounded wrong, which is why
@@ -208,6 +212,32 @@ output. Prose still needs a human; these cover what a machine can check.
   The suite grew from 1032 to 1678 tests; each fix was verified to fail when
   reverted.
 - `ruff` and `ty` are clean across `src/`, `tests/` and `scripts/`.
+
+## [0.1.11]
+
+### Changed
+
+- **Visitor-based AST dispatch** - Replaced `isinstance()`-based dispatch in `score.py` (`node_to_str()`) and `midi/generator.py` (`_process_node()`) with proper visitor pattern using `ASTVisitor` from `ast_nodes.py`
+  - `score.py`: New `_AldaStringVisitor` class handles AST-to-Alda string conversion via `visit_*` methods, replacing nested closures with `isinstance` chains and `hasattr` fallbacks
+  - `midi/generator.py`: `MidiGenerator` now extends `ASTVisitor`; the monolithic 20-branch `_process_node()` dispatch is replaced by individual `visit_*Node` methods with dynamic dispatch via `ASTVisitor.visit()`
+
+- **Error messages with fix suggestions** - Added a `hint` field to `AldaParseError` and contextual hints across all scanner, parser, and CLI error paths
+  - Scanner: hints for unexpected characters, unmatched parens, unterminated strings, empty markers/repeats
+  - Parser: hints for missing colons, unclosed brackets/braces/parens, quoted expressions, variable syntax, durations
+  - CLI: actionable suggestions for missing input, missing files, no notes generated, unavailable backends
+
+### Added
+
+- **MkDocs documentation site** - Added `mkdocs.yml` with Material theme, `docs/index.md` landing page, and organized navigation covering home, quick reference, Alda language guide (15 pages), and API design
+  - New Makefile targets: `docs` (build), `docs-serve` (local preview), `docs-deploy` (GitHub Pages)
+  - Added `mkdocs` and `mkdocs-material` as dev dependencies
+
+- **GitHub Actions prerelease workflow** - Added opt-in `prerelease` checkbox to the `Build and Publish` workflow dispatch. When enabled, reads version from `pyproject.toml`, creates a git tag, and uploads all wheels and sdist to a GitHub prerelease titled `aldakit v{version}`. PyPI publishing is also now opt-in via a separate `publish` checkbox (both default to off).
+
+### Removed
+
+- **Unused C parser** (`thirdparty/alda-parser`) - Removed incomplete, unbundled C parser. The Python recursive descent parser is the sole parser and has full Alda language coverage.
+- **Stale internal docs** - Removed `test_specification.md`, `example_compatibility.md`, `offset.md` (garbled), `implementing-an-alda-library.md`, `writing-music-programmatically.md`, `instance-and-group-assignment.md` (all original Alda project docs not relevant to aldakit users)
 
 ### Fixed
 

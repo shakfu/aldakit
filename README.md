@@ -1240,7 +1240,7 @@ MIT
 
 - [Alda](https://alda.io) - The original Alda language and reference implementation
 - [Alda Cheat Sheet](https://alda.io/cheat-sheet/) - Syntax reference
-- [Extending aldakit](https://github.com/shakfu/aldakit/blob/main/docs/extending-aldakit.md) - Design document for programmatic API
+- [Extending aldakit](https://github.com/shakfu/aldakit/blob/main/docs/api-design.md) - Design document for programmatic API
 - [libremidi](https://github.com/celtera/libremidi) - A modern C++ MIDI 1 / MIDI 2 real-time & file I/O library. Supports Windows, macOS, Linux and WebMIDI.
 - [TinySoundFont](https://github.com/schellingb/TinySoundFont) - SoundFont2 synthesizer library in a single C/C++ header
 - [miniaudio](https://github.com/mackron/miniaudio) - Single-header audio playback and capture library

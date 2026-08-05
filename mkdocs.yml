@@ -1,0 +1,49 @@
+site_name: aldakit
+site_description: Python parser and MIDI generator for the Alda music programming language
+site_url: https://shakfu.github.io/aldakit
+repo_url: https://github.com/shakfu/aldakit
+repo_name: shakfu/aldakit
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: teal
+    accent: amber
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quick Reference: reference.md
+  - Alda Language:
+      - Overview: alda-language/alda-overview.md
+      - Scores and Parts: alda-language/scores-and-parts.md
+      - Notes: alda-language/notes.md
+      - Rests: alda-language/rests.md
+      - Chords: alda-language/chords.md
+      - Tempo: alda-language/tempo.md
+      - Attributes: alda-language/attributes.md
+      - Variables: alda-language/variables.md
+      - Markers: alda-language/markers.md
+      - Voices: alda-language/voices.md
+      - Repeats: alda-language/repeats.md
+      - Sequences: alda-language/sequences.md
+      - Cram Expressions: alda-language/cram-expressions.md
+      - Comments: alda-language/comments.md
+      - Instruments: alda-language/list-of-instruments.md
+  - API Design: api-design.md

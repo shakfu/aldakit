@@ -159,7 +159,7 @@ Instrument names and aliases must adhere to the following rules:
 ### How instances are assigned
 
 The details of how Alda creates and assigns instrument instances are
-[complicated](instance-and-group-assignment.md), but for practical purposes, you
+complicated, but for practical purposes, you
 can avoid errors by following these simple rules:
 
 * If you assign an alias to one instance of an instrument, then any other

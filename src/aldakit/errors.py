@@ -11,10 +11,12 @@ class AldaParseError(Exception):
         message: str,
         position: SourcePosition | None = None,
         source_line: str | None = None,
+        hint: str | None = None,
     ):
         self.message = message
         self.position = position
         self.source_line = source_line
+        self.hint = hint
         super().__init__(self._format_message())
 
     def _format_message(self) -> str:
@@ -29,6 +31,9 @@ class AldaParseError(Exception):
             parts.append(f"\n  {self.source_line}")
             # Add caret pointing to error column
             parts.append(f"\n  {' ' * (self.position.column - 1)}^")
+
+        if self.hint:
+            parts.append(f"\n  Hint: {self.hint}")
 
         return "".join(parts)
 

@@ -8,7 +8,7 @@ derive from it.
 Everything described here is implemented. The "Implementation Phases" section
 is kept as a record of how the API was built up, not as a roadmap. For a
 task-oriented guide to the same API, see the "Programmatic Composition" section
-of the [README](../README.md).
+of the [README](https://github.com/shakfu/aldakit#programmatic-composition).
 
 ## Architecture Overview
 

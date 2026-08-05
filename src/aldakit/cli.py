@@ -570,7 +570,15 @@ def read_source(args: argparse.Namespace) -> tuple[str, str]:
     file_arg = getattr(args, "file", None)
     if file_arg is None:
         print(
-            "Error: No input file specified. Use -e for inline code or 'aldakit play <file>'.",
+            "Error: No input file specified.",
+            file=sys.stderr,
+        )
+        print(
+            "  Try: aldakit play <file.alda>",
+            file=sys.stderr,
+        )
+        print(
+            "  Or:  aldakit eval -e 'piano: c d e'",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -583,6 +591,10 @@ def read_source(args: argparse.Namespace) -> tuple[str, str]:
 
     if not file_arg.exists():
         print(f"Error: File not found: {file_arg}", file=sys.stderr)
+        print(
+            "  Check the path and ensure the file has a .alda or .mid extension.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     return file_arg.read_text(), str(file_arg)
@@ -759,10 +771,10 @@ def main(argv: list[str] | None = None) -> int:
     file_arg = getattr(args, "file", None)
     eval_code = getattr(args, "eval", None)
     if args.command == "play" and file_arg is None and eval_code is None:
-        print(
-            "Error: No input specified. Use 'aldakit play <file>' or 'aldakit eval <code>'.",
-            file=sys.stderr,
-        )
+        print("Error: No input specified.", file=sys.stderr)
+        print("  Try: aldakit play song.alda", file=sys.stderr)
+        print("  Or:  aldakit eval -e 'piano: c d e'", file=sys.stderr)
+        print("  Or:  cat song.alda | aldakit play --stdin", file=sys.stderr)
         return 1
 
     # Read source
@@ -799,6 +811,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not sequence.notes:
         print("Warning: No notes generated.", file=sys.stderr)
+        print(
+            "  Ensure your score has a part and notes. Example: piano: c d e f g",
+            file=sys.stderr,
+        )
         return 0
 
     if verbose:
@@ -850,6 +866,14 @@ def main(argv: list[str] | None = None) -> int:
             if not HAS_TSF:
                 print(
                     "Error: Audio backend not available. The _tsf module was not built.",
+                    file=sys.stderr,
+                )
+                print(
+                    "  Reinstall aldakit from source to compile the audio backend,",
+                    file=sys.stderr,
+                )
+                print(
+                    "  or use MIDI output instead: aldakit play song.alda",
                     file=sys.stderr,
                 )
                 return 1

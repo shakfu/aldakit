@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from ..ast_nodes import (
-    ASTNode,
+    ASTVisitor,
     AtMarkerNode,
     BarlineNode,
     BracketedSequenceNode,
@@ -180,7 +180,7 @@ class GeneratorState:
     groups: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
-class MidiGenerator:
+class MidiGenerator(ASTVisitor):
     """Generates MIDI events from an Alda AST."""
 
     def __init__(self) -> None:
@@ -206,7 +206,7 @@ class MidiGenerator:
 
         # Process all children
         for child in ast.children:
-            self._process_node(child)
+            self.visit(child)
 
         # Sort events by time
         self.sequence.notes.sort(key=lambda n: n.start_time)
@@ -246,78 +246,6 @@ class MidiGenerator:
         self.state.next_channel += 1
         return MELODIC_CHANNELS[index]
 
-    def _get_part_state(self) -> PartState:
-        """Get the current part state (first active part), creating default if needed."""
-        if not self.state.current_parts:
-            # Create implicit part
-            self.state.current_parts = ["_default"]
-            self.state.parts["_default"] = PartState(
-                channel=self._allocate_channel(),
-                program=0,
-            )
-
-        return self.state.parts[self.state.current_parts[0]]
-
-    def _get_all_part_states(self) -> list[PartState]:
-        """Get all currently active part states."""
-        if not self.state.current_parts:
-            return [self._get_part_state()]
-        return [self.state.parts[name] for name in self.state.current_parts]
-
-    def _process_node(self, node: ASTNode) -> None:
-        """Process an AST node."""
-        if isinstance(node, PartNode):
-            self._process_part(node)
-        elif isinstance(node, PartDeclarationNode):
-            # A declaration on its own switches the active part; the events
-            # that follow are separate siblings.
-            self._process_part(
-                PartNode(
-                    declaration=node,
-                    events=EventSequenceNode(events=[], position=node.position),
-                    position=node.position,
-                )
-            )
-        elif isinstance(node, EventSequenceNode):
-            self._process_event_sequence(node)
-        elif isinstance(node, NoteNode):
-            self._process_note(node)
-        elif isinstance(node, RestNode):
-            self._process_rest(node)
-        elif isinstance(node, ChordNode):
-            self._process_chord(node)
-        elif isinstance(node, OctaveSetNode):
-            for part in self._get_all_part_states():
-                part.octave = node.octave
-        elif isinstance(node, OctaveUpNode):
-            for part in self._get_all_part_states():
-                part.octave += 1
-        elif isinstance(node, OctaveDownNode):
-            for part in self._get_all_part_states():
-                part.octave -= 1
-        elif isinstance(node, BarlineNode):
-            pass  # Barlines are purely visual
-        elif isinstance(node, LispListNode):
-            self._process_lisp_list(node)
-        elif isinstance(node, VariableDefinitionNode):
-            self._process_variable_definition(node)
-        elif isinstance(node, VariableReferenceNode):
-            self._process_variable_reference(node)
-        elif isinstance(node, MarkerNode):
-            self._process_marker(node)
-        elif isinstance(node, AtMarkerNode):
-            self._process_at_marker(node)
-        elif isinstance(node, VoiceGroupNode):
-            self._process_voice_group(node)
-        elif isinstance(node, CramNode):
-            self._process_cram(node)
-        elif isinstance(node, RepeatNode):
-            self._process_repeat(node)
-        elif isinstance(node, OnRepetitionsNode):
-            self._process_on_repetitions(node)
-        elif isinstance(node, BracketedSequenceNode):
-            self._process_event_sequence(node.events)
-
     def _resolve_group_member(self, name: str) -> str | None:
         """Resolve a dotted group-member reference such as ``strings.cello``.
 
@@ -336,7 +264,59 @@ class MidiGenerator:
             return None
         return members.get(member.lower())
 
-    def _process_part(self, node: PartNode) -> None:
+    def _get_part_state(self) -> PartState:
+        """Get the current part state (first active part), creating default if needed."""
+        if not self.state.current_parts:
+            # Create implicit part
+            self.state.current_parts = ["_default"]
+            self.state.parts["_default"] = PartState(
+                channel=self._allocate_channel(),
+                program=0,
+            )
+
+        return self.state.parts[self.state.current_parts[0]]
+
+    def _get_all_part_states(self) -> list[PartState]:
+        """Get all currently active part states."""
+        if not self.state.current_parts:
+            return [self._get_part_state()]
+        return [self.state.parts[name] for name in self.state.current_parts]
+
+    def visit_OctaveSetNode(self, node: OctaveSetNode) -> None:
+        for part in self._get_all_part_states():
+            part.octave = node.octave
+
+    def visit_OctaveUpNode(self, node: OctaveUpNode) -> None:
+        for part in self._get_all_part_states():
+            part.octave += 1
+
+    def visit_OctaveDownNode(self, node: OctaveDownNode) -> None:
+        for part in self._get_all_part_states():
+            part.octave -= 1
+
+    def visit_BarlineNode(self, node: BarlineNode) -> None:
+        pass  # Barlines are purely visual
+
+    def visit_BracketedSequenceNode(self, node: BracketedSequenceNode) -> None:
+        self.visit(node.events)
+
+    def visit_NoteNode(self, node: NoteNode) -> None:
+        self._process_note(node)
+
+    def visit_PartDeclarationNode(self, node: PartDeclarationNode) -> None:
+        """Handle a declaration that is not wrapped in a PartNode.
+
+        It switches the active part; the events that follow are siblings.
+        """
+        self.visit_PartNode(
+            PartNode(
+                declaration=node,
+                events=EventSequenceNode(events=[], position=node.position),
+                position=node.position,
+            )
+        )
+
+    def visit_PartNode(self, node: PartNode) -> None:
         """Process a part declaration and its events."""
         # Get instrument name(s)
         names = node.declaration.names
@@ -348,7 +328,7 @@ class MidiGenerator:
             resolved = self._resolve_group_member(names[0])
             if resolved is not None:
                 self.state.current_parts = [resolved]
-                self._process_event_sequence(node.events)
+                self.visit(node.events)
                 return
             self._warn(
                 f"Unknown group member {names[0]!r}; no aliased group defines it.",
@@ -423,12 +403,12 @@ class MidiGenerator:
         self.state.current_parts = active_parts
 
         # Process events (will be applied to all active parts)
-        self._process_event_sequence(node.events)
+        self.visit(node.events)
 
-    def _process_event_sequence(self, node: EventSequenceNode) -> None:
+    def visit_EventSequenceNode(self, node: EventSequenceNode) -> None:
         """Process a sequence of events."""
         for event in node.events:
-            self._process_node(event)
+            self.visit(event)
 
     def _process_note(self, node: NoteNode, is_chord: bool = False) -> float:
         """Process a note, returning its duration in seconds.
@@ -496,7 +476,7 @@ class MidiGenerator:
 
         return duration_secs
 
-    def _process_rest(self, node: RestNode) -> None:
+    def visit_RestNode(self, node: RestNode) -> None:
         """Process a rest."""
         # Process rest for each active part (multi-instrument support)
         for part in self._get_all_part_states():
@@ -510,7 +490,7 @@ class MidiGenerator:
             # Advance time
             part.current_time += duration_secs
 
-    def _process_chord(self, node: ChordNode) -> None:
+    def visit_ChordNode(self, node: ChordNode) -> None:
         """Process a chord (simultaneous notes)."""
         # Save start times for all active parts
         all_parts = self._get_all_part_states()
@@ -521,23 +501,14 @@ class MidiGenerator:
             if isinstance(item, NoteNode):
                 duration = self._process_note(item, is_chord=True)
                 max_duration = max(max_duration, duration)
-            elif isinstance(item, OctaveSetNode):
-                for part in all_parts:
-                    part.octave = item.octave
-            elif isinstance(item, OctaveUpNode):
-                for part in all_parts:
-                    part.octave += 1
-            elif isinstance(item, OctaveDownNode):
-                for part in all_parts:
-                    part.octave -= 1
-            elif isinstance(item, LispListNode):
-                self._process_lisp_list(item)
+            else:
+                self.visit(item)
 
         # Advance time by the longest note for all parts
         for part in all_parts:
             part.current_time = start_times[id(part)] + max_duration
 
-    def _process_lisp_list(self, node: LispListNode) -> None:
+    def visit_LispListNode(self, node: LispListNode) -> None:
         """Process a Lisp S-expression (attribute setting)."""
         if not node.elements:
             return
@@ -849,23 +820,23 @@ class MidiGenerator:
 
         return None
 
-    def _process_variable_definition(self, node: VariableDefinitionNode) -> None:
+    def visit_VariableDefinitionNode(self, node: VariableDefinitionNode) -> None:
         """Process a variable definition (store only, don't emit sound)."""
         self.state.variables[node.name] = node.events
 
-    def _process_variable_reference(self, node: VariableReferenceNode) -> None:
+    def visit_VariableReferenceNode(self, node: VariableReferenceNode) -> None:
         """Process a variable reference."""
         if node.name in self.state.variables:
-            self._process_event_sequence(self.state.variables[node.name])
+            self.visit(self.state.variables[node.name])
         else:
             self._warn(f"Undefined variable {node.name!r}.", node.position)
 
-    def _process_marker(self, node: MarkerNode) -> None:
+    def visit_MarkerNode(self, node: MarkerNode) -> None:
         """Process a marker definition."""
         part = self._get_part_state()
         self.state.markers[node.name] = part.current_time
 
-    def _process_at_marker(self, node: AtMarkerNode) -> None:
+    def visit_AtMarkerNode(self, node: AtMarkerNode) -> None:
         """Process a marker reference (jump to marker time)."""
         if node.name in self.state.markers:
             target_time = self.state.markers[node.name]
@@ -874,7 +845,7 @@ class MidiGenerator:
         else:
             self._warn(f"Undefined marker {node.name!r}.", node.position)
 
-    def _process_voice_group(self, node: VoiceGroupNode) -> None:
+    def visit_VoiceGroupNode(self, node: VoiceGroupNode) -> None:
         """Process a voice group."""
         all_parts = self._get_all_part_states()
         start_times = {id(p): p.current_time for p in all_parts}
@@ -884,7 +855,7 @@ class MidiGenerator:
             # Reset to start time for each voice
             for part in all_parts:
                 part.current_time = start_times[id(part)]
-            self._process_event_sequence(voice.events)
+            self.visit(voice.events)
             for part in all_parts:
                 max_end_time = max(max_end_time, part.current_time)
 
@@ -892,7 +863,7 @@ class MidiGenerator:
         for part in all_parts:
             part.current_time = max_end_time
 
-    def _process_cram(self, node: CramNode) -> None:
+    def visit_CramNode(self, node: CramNode) -> None:
         """Process a cram expression."""
         all_parts = self._get_all_part_states()
         part = all_parts[0]  # Use first part for duration calculation
@@ -919,7 +890,7 @@ class MidiGenerator:
             p.default_duration = total_beats / event_count
 
         # Process events
-        self._process_event_sequence(node.events)
+        self.visit(node.events)
 
         # Restore state and set final time for all parts
         for p in all_parts:
@@ -927,14 +898,14 @@ class MidiGenerator:
             p.default_duration = saved_duration
             p.current_time = start_time + total_secs
 
-    def _process_repeat(self, node: RepeatNode) -> None:
+    def visit_RepeatNode(self, node: RepeatNode) -> None:
         """Process a repeat expression."""
         for i in range(node.times):
             self.state.repetition_number = i + 1
-            self._process_node(node.event)
+            self.visit(node.event)
         self.state.repetition_number = 1
 
-    def _process_on_repetitions(self, node: OnRepetitionsNode) -> None:
+    def visit_OnRepetitionsNode(self, node: OnRepetitionsNode) -> None:
         """Process an on-repetitions expression."""
         # Check if current repetition matches any of the ranges
         current_rep = self.state.repetition_number
@@ -953,7 +924,7 @@ class MidiGenerator:
                     break
 
         if should_play:
-            self._process_node(node.event)
+            self.visit(node.event)
 
     def _calculate_duration(
         self, duration: DurationNode | None, part: PartState

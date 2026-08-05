@@ -2,7 +2,7 @@
 
 This document provides a comprehensive reference for the Alda music programming language as implemented in aldakit.
 
-For the original Alda language documentation, see the [alda-language/](alda-language/) directory.
+For detailed Alda language documentation, see the [Alda Language](alda-language/alda-overview.md) section.
 
 ---
 
@@ -507,4 +507,3 @@ c d e    # Inline comment
 | Concurrent playback | Yes (8 slots) | Yes |
 | Built-in audio | Yes (TinySoundFont) | No |
 
-See [ALDA_IMPLEMENTATIONS.md](../ALDA_IMPLEMENTATIONS.md) for detailed comparison.
