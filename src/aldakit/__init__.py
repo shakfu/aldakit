@@ -1,7 +1,7 @@
 """aldakit: a pythonic alda music programming language implementation."""
 
 from .analysis import Finding, ScoreInfo, inspect_score, lint_score
-from .api import list_ports, play, play_file, save, save_file
+from .api import list_ports, play, play_file, render, render_file, save, save_file
 from .ast_nodes import (
     ASTNode,
     ASTVisitor,
@@ -67,6 +67,8 @@ __all__ = [
     "play_file",
     "save",
     "save_file",
+    "render",
+    "render_file",
     "list_ports",
     "transcribe",
     "list_input_ports",

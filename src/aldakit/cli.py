@@ -11,6 +11,7 @@ from .config import load_config
 from .constants import (
     DEFAULT_QUANTIZE_GRID,
     DEFAULT_RECORDING_DURATION,
+    DEFAULT_SOUNDFONT_GAIN,
     DEFAULT_SWING_RATIO,
     DEFAULT_TEMPO,
     DEFAULT_VIRTUAL_PORT_NAME,
@@ -21,6 +22,7 @@ from .constants import (
 from .errors import AldaParseError
 from .midi import LibremidiBackend
 from .midi.generator import MidiGenerator
+from .midi.render import DEFAULT_TAIL_SECONDS
 from .midi.soundfont import DEFAULT_SOUNDFONT
 
 
@@ -280,6 +282,57 @@ def create_parser() -> argparse.ArgumentParser:
         "--strict",
         action="store_true",
         help="Exit non-zero on warnings as well as errors",
+    )
+
+    # ------------------------------------------------------------
+    # render subcommand
+
+    render_parser = subparsers.add_parser(
+        "render",
+        help="Render a score to a WAV file, faster than real time",
+    )
+    render_parser.add_argument(
+        "file",
+        nargs="?",
+        type=Path,
+        help="Alda file to render (use - for stdin)",
+    )
+    render_parser.add_argument(
+        "-e",
+        "--eval",
+        metavar="CODE",
+        help="Render Alda code given on the command line",
+    )
+    render_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        metavar="FILE",
+        help="Output WAV file (default: the input file with a .wav suffix)",
+    )
+    render_parser.add_argument(
+        "-sf",
+        "--soundfont",
+        metavar="FILE",
+        help="SoundFont to synthesize with (default: the one playback uses)",
+    )
+    render_parser.add_argument(
+        "-g",
+        "--gain",
+        type=float,
+        default=DEFAULT_SOUNDFONT_GAIN,
+        metavar="GAIN",
+        help=f"Global gain, 0.0 to 2.0 (default: {DEFAULT_SOUNDFONT_GAIN})",
+    )
+    render_parser.add_argument(
+        "--tail",
+        type=float,
+        default=DEFAULT_TAIL_SECONDS,
+        metavar="SECONDS",
+        help=(
+            "Audio rendered after the last note ends, so release tails are "
+            f"not cut off (default: {DEFAULT_TAIL_SECONDS})"
+        ),
     )
 
     # ------------------------------------------------------------
@@ -649,6 +702,82 @@ def _format_duration(seconds: float) -> str:
     return f"{int(minutes)}:{remainder:04.1f} ({seconds:.2f}s)"
 
 
+def render_command(args: argparse.Namespace) -> int:
+    """Render a score to a WAV file without playing it."""
+    from .midi.render import render_wav
+
+    source, filename = read_source(args)
+
+    try:
+        ast = parse(source, filename)
+    except AldaParseError as e:
+        print(f"Parse error: {e}", file=sys.stderr)
+        return 1
+
+    generator = MidiGenerator()
+    sequence = generator.generate(ast)
+    for diagnostic in generator.diagnostics:
+        print(f"Warning: {diagnostic}", file=sys.stderr)
+    if not sequence.notes:
+        print("Warning: No notes generated.", file=sys.stderr)
+
+    output = args.output
+    if output is None:
+        file_arg = getattr(args, "file", None)
+        if file_arg is None or str(file_arg) == "-":
+            print(
+                "Error: No output file. Use -o FILE with -e or stdin.",
+                file=sys.stderr,
+            )
+            return 1
+        output = Path(file_arg).with_suffix(".wav")
+
+    try:
+        written, peak = render_wav(
+            sequence,
+            output,
+            args.soundfont,
+            gain=args.gain,
+            tail=args.tail,
+        )
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except (RuntimeError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if peak > 1.0:
+        # The same mix would clip on the way to the speakers; say so here,
+        # where the result is a file someone will look at.
+        # A little under the exact figure, so that rounding the suggestion to
+        # two decimals cannot leave it still clipping.
+        suggested = max(0.01, args.gain / peak * 0.98)
+        print(
+            f"Warning: the mix peaked at {peak:.2f} of full scale and was "
+            f"clipped. Try --gain {suggested:.2f}.",
+            file=sys.stderr,
+        )
+
+    seconds = sequence.duration() + args.tail
+    size_mb = written.stat().st_size / (1024 * 1024)
+    print(f"Wrote {written} ({_format_duration(seconds)}, {size_mb:.1f} MB)")
+    return 0
+
+
+def _format_channels(part) -> str:
+    """The MIDI channels a part sounds on, as one table cell.
+
+    Most parts have one. A score with more parts than channels hands them on
+    as parts stop sounding, so a part can use several; a part that never
+    sounds uses none.
+    """
+    channels = [c for c in part.channels if c >= 0]
+    if not channels:
+        return "-"
+    return ",".join(str(c) for c in channels)
+
+
 def info_command(args: argparse.Namespace) -> int:
     """Summarise a score without playing it."""
     from .analysis import inspect_score
@@ -687,9 +816,14 @@ def info_command(args: argparse.Namespace) -> int:
         name_width = max(name_width, len("part"))
         instrument_width = max(len(p.instrument) for p in info.parts)
         instrument_width = max(instrument_width, len("instrument"))
+        # A part can move between channels in a score with more parts than
+        # channels, and a part that never sounds occupies none at all.
+        channels = {p.name: _format_channels(p) for p in info.parts}
+        channel_width = max(len(text) for text in channels.values())
+        channel_width = max(channel_width, len("chan"))
         header = (
             f"  {'part':<{name_width}}  {'instrument':<{instrument_width}}  "
-            f"{'prog':>4}  {'chan':>4}  {'notes':>6}"
+            f"{'prog':>4}  {'chan':>{channel_width}}  {'notes':>6}"
         )
         print(header)
         print(f"  {'-' * (len(header) - 2)}")
@@ -697,7 +831,8 @@ def info_command(args: argparse.Namespace) -> int:
             program = "--" if part.percussion else str(part.program)
             print(
                 f"  {part.name:<{name_width}}  {part.instrument:<{instrument_width}}  "
-                f"{program:>4}  {part.channel:>4}  {part.note_count:>6}"
+                f"{program:>4}  {channels[part.name]:>{channel_width}}  "
+                f"{part.note_count:>6}"
             )
             details = []
             if part.key_signature:
@@ -1124,6 +1259,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "info":
         return info_command(args)
+
+    if args.command == "render":
+        return render_command(args)
 
     if args.command == "lint":
         return lint_command(args)

@@ -68,6 +68,71 @@ class TestInfo:
         assert rows["piano"][-2:] == ["0", "2"]  # channel 0, two notes
         assert rows["violin"][-2:] == ["1", "1"]
 
+    def test_shows_every_channel_a_part_moves_between(self, capsys):
+        """A score with more parts than channels hands channels on."""
+        instruments = [
+            "midi-electric-piano-1",
+            "violin",
+            "viola",
+            "cello",
+            "flute",
+            "oboe",
+            "clarinet",
+            "bassoon",
+            "trumpet",
+            "trombone",
+            "tuba",
+            "harp",
+            "banjo",
+            "sitar",
+            "koto",
+            "organ",
+        ]
+        source = "\n".join(
+            [f"{instruments[0]}: c4 r1*2 c4"]
+            + [f"{name}: c4" for name in instruments[1:15]]
+            + [f"{instruments[15]}: r2 c1*4"]
+        )
+        assert main(["info", "-e", source]) == 0
+        rows = [
+            line.split()
+            for line in capsys.readouterr().out.splitlines()
+            if line.strip().startswith(instruments[0])
+        ]
+        assert rows[0][-2] == "0,1"
+
+    def test_shows_a_dash_for_a_part_that_never_sounds(self, capsys):
+        """Once channels are being reused, a silent part is given none."""
+        instruments = [
+            "midi-electric-piano-1",
+            "violin",
+            "viola",
+            "cello",
+            "flute",
+            "oboe",
+            "clarinet",
+            "bassoon",
+            "trumpet",
+            "trombone",
+            "tuba",
+            "harp",
+            "banjo",
+            "sitar",
+            "koto",
+            "organ",
+        ]
+        source = "\n".join(
+            [f"{name}: {'r1 ' * i}c1" for i, name in enumerate(instruments)]
+            + ["midi-kalimba:"]
+        )
+        assert main(["info", "-e", source]) == 0
+        rows = [
+            line.split()
+            for line in capsys.readouterr().out.splitlines()
+            if line.strip().startswith("midi-kalimba")
+        ]
+        assert rows[0][-2:] == ["-", "0"]
+
     def test_mentions_findings_and_points_at_lint(self, capsys):
         assert main(["info", "-e", "bogus: c"]) == 0
         out = capsys.readouterr().out

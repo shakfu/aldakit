@@ -24,19 +24,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The ends of the supported range on every platform: an OS-specific
+        # problem (ALSA, CoreMIDI, WinMM, the MSVC runtime) rarely depends on
+        # the Python version, and 3.10 and 3.14 are the two the wheels are
+        # built for at either end.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.10", "3.14"]
         include:
-          # Cover the ends of the supported range on one platform
+          # The middle of the range on the cheapest runner: a problem that
+          # depends on the Python version rarely also depends on the OS.
           - os: ubuntu-latest
             python-version: "3.11"
           - os: ubuntu-latest
             python-version: "3.12"
           - os: ubuntu-latest
-            python-version: "3.14"
+            python-version: "3.13"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -44,7 +49,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           enable-cache: true
 
@@ -60,6 +65,66 @@ jobs:
       - name: Test
         run: uv run pytest tests/ -q
 
+  audio:
+    name: Golden audio on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two platforms is enough to catch a real change in what the
+        # synthesizer produces while keeping the render time off the critical
+        # path of every job in the matrix above.
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install ALSA headers (libremidi)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: true
+
+      - name: Install project
+        run: uv sync
+
+      # The fixtures are pinned to one SoundFont, a 6 MB download from a
+      # third-party site. Cache it so that a run does not depend on that site
+      # being up, keyed on the catalog so that changing the pinned SoundFont
+      # or its checksum fetches the new one.
+      - name: Cache the pinned SoundFont
+        uses: actions/cache@v4
+        with:
+          path: ~/.aldakit/soundfonts
+          key: soundfont-TimGM6mb-${{ hashFiles('src/aldakit/midi/soundfont.py') }}
+
+      # On a cache hit this is a no-op. On a miss it fetches 6 MB from a
+      # community site, so a transient failure gets two more chances before
+      # the job goes red over someone else's network.
+      - name: Install the pinned SoundFont
+        run: |
+          for attempt in 1 2 3; do
+            if uv run aldakit soundfont install TimGM6mb; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          echo "::error::Could not download the pinned SoundFont after 3 tries"
+          exit 1
+
+      # ALDAKIT_REQUIRE_AUDIO_FIXTURES turns "no SoundFont, nothing to
+      # compare" from a skip into a failure: a green tick for a comparison
+      # that never ran is worse than no comparison at all.
+      - name: Compare rendered audio against the fixtures
+        env:
+          ALDAKIT_REQUIRE_AUDIO_FIXTURES: "1"
+        run: uv run pytest tests/test_golden_audio.py tests/test_render.py -q
+
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     needs: [test]
@@ -70,7 +135,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -81,10 +146,10 @@ jobs:
           platforms: arm64
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.3.1
+        uses: pypa/cibuildwheel@v4.2.0
         # Configuration is in pyproject.toml [tool.cibuildwheel]
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
@@ -94,14 +159,14 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Build sdist
         run: pipx run build --sdist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -111,7 +176,7 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -119,7 +184,7 @@ jobs:
       - name: List all artifacts
         run: ls -la dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: all-dist
           path: dist/*
@@ -136,7 +201,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: all-dist
           path: dist
@@ -153,7 +218,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Get version from pyproject.toml
         id: version
@@ -163,7 +228,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: all-dist
           path: dist

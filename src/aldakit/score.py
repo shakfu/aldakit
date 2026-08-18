@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .ast_nodes import RootNode
-from .constants import POLL_INTERVAL_PLAYBACK
+from .constants import DEFAULT_SOUNDFONT_GAIN, POLL_INTERVAL_PLAYBACK
+from .midi.render import DEFAULT_TAIL_SECONDS
 from .midi.backends import LibremidiBackend
 from .midi.generator import Diagnostic, MidiGenerator
 from .midi.smf import write_midi_file
@@ -488,6 +489,35 @@ class Score:
         else:
             # Default to MIDI
             write_midi_file(self.midi, path)
+
+    def render(
+        self,
+        path: str | Path,
+        soundfont: str | Path | None = None,
+        *,
+        gain: float = DEFAULT_SOUNDFONT_GAIN,
+        tail: float = DEFAULT_TAIL_SECONDS,
+    ) -> Path:
+        """Render the score to a WAV file, faster than real time.
+
+        Unlike :meth:`play`, this needs no audio device and does not take as
+        long as the score lasts.
+
+        Args:
+            path: Output path. A ``.wav`` suffix is added if there is none.
+            soundfont: SoundFont to synthesize with. If None, the one
+                playback would use is found the same way.
+            gain: Global gain, 0.0 to 2.0.
+            tail: Seconds rendered after the last note ends, for release
+                tails that would otherwise be cut off.
+
+        Returns:
+            The path written.
+        """
+        from .midi.render import render_wav
+
+        written, _peak = render_wav(self.midi, path, soundfont, gain=gain, tail=tail)
+        return written
 
     def __repr__(self) -> str:
         return self._content.describe()

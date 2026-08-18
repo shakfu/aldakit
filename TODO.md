@@ -20,12 +20,20 @@
 - [x] **`aldakit soundfont`**: `list`, `install`, `verify` and `path` reach the SoundFont manager, and audio playback with no SoundFont offers to download one.
 - [x] **`aldakit info` and `aldakit lint`**: score inspection and a linter over the generator's diagnostics channel, in `aldakit/analysis.py`. `lint --strict` exits non-zero, so it works as a build step.
 
-- [ ] **Channel reuse over time**: aldakit assigns a channel per part for the life of the score; Alda reuses a channel once a part stops sounding, which is why `all-instruments.alda` and `midi-channel-management.alda` report `too-many-parts` under `aldakit lint`.
+- [x] **Channel reuse over time**: parts are given placeholder channels while the AST is walked, and `aldakit/midi/channels.py` turns those into real channels once the score's shape is known, handing a channel on when the part holding it stops sounding and restating the new part's instrument, pan and volume. `all-instruments.alda` and `midi-channel-management.alda` lint clean. Reuse is a fallback: 15 or fewer melodic parts still get one channel each, in declaration order.
+
+- [x] **Per-part chord and cram timing**: a chord advanced every active part by the duration of whichever part was processed last, and a cram took its length from the first part, so parts in a group that had diverged in tempo or default note length drifted apart. Each part now advances by its own length; `multi-poly.alda` lines up as the 2:1 polyrhythm it is written as.
+
+- [ ] **Note-level channel reuse**: a channel is freed when the part on it stops sounding, which is enough for every bundled example. Alda decides this per note, so a score where more than 15 parts overlap in span but not in individual notes still reports `too-many-parts`.
 
 ## Medium-term
 
+- [x] **Offline audio rendering** (F2 in `REVIEW.md`): `aldakit render` writes a WAV file through the same synthesis loop playback uses, with no audio device and faster than real time.
+
+- [x] **Golden audio fixtures**: `tests/golden/audio.json` pins what every example sounds like, rendered with a checksum-pinned SoundFont, and CI compares it on Linux and macOS. Regenerate with `make golden-audio`. The MIDI fixtures cannot see anything that happens after generation; these can.
+
 - [ ] **`--monitor` and `--metronome` CLI helpers**: Provide real-time grid tracking aids for live transcription workflows.
-- [ ] **Performance Profiling**: Profile MIDI generation for large scores; add benchmark scripts.
+- [x] **Performance Profiling**: measured rather than done. A synthetic 32,000-note score scans in 53 ms, parses in 183 ms and generates MIDI in 43 ms; `all-instruments.alda` is 14 ms end to end. There is no generation problem to profile, and the cost that does dominate is parsing, not MIDI generation. Reopen with a score that is actually slow.
 - [ ] **Conditional Full Bindings**: Detect `boost` and `readerwriterqueue` in CMake and define `LIBREMIDI_FULL_BINDINGS` to conditionally compile richer polling/observer APIs in `_libremidi.cpp`. Keeps zero-dependency wheels lean while unlocking responsive MIDI I/O for contributors.
 
 ## Long-term

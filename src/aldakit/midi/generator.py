@@ -64,6 +64,14 @@ from ..midi.types import (
     note_to_midi_raw,
 )
 from ..theory import key_signature_from_string, key_signature_from_symbols
+from .channels import (
+    MELODIC_CHANNELS as MELODIC_CHANNELS,
+)
+from .channels import (
+    VIRTUAL_CHANNEL_BASE,
+    ChannelAssignment,
+    assign_channels,
+)
 
 
 # Attribute name as written in a score -> name of the MidiGenerator method
@@ -93,14 +101,6 @@ def _copied(value: object) -> object:
     return dict(value) if isinstance(value, dict) else value
 
 
-# Channels available to pitched instruments. Channel 9 (MIDI channel 10) is
-# reserved by the General MIDI spec for percussion, where the note number
-# selects a drum sound rather than a pitch.
-MELODIC_CHANNELS: tuple[int, ...] = tuple(
-    c for c in range(MIDI_MAX_CHANNELS) if c != MIDI_DRUM_CHANNEL
-)
-
-
 @dataclass
 class Diagnostic:
     """A non-fatal problem found while generating MIDI."""
@@ -127,7 +127,14 @@ class PartState:
     quantization: float = DEFAULT_QUANTIZATION  # 0.0-1.0, affects note duration
     default_duration: float = DEFAULT_DURATION  # Beats (quarter note = 1 beat)
     current_time: float = 0.0  # Current time in seconds
+    #: The MIDI channel this part sounds on. While the AST is being walked
+    #: this is a placeholder; generate() replaces it with a real channel once
+    #: the score's shape is known. -1 means the part never sounds, so it needs
+    #: no channel at all.
     channel: int = 0
+    #: The placeholder the part's events were emitted on, kept so that the
+    #: linter can attribute a shared channel back to the parts sharing it.
+    allocated_channel: int = 0
     program: int = 0
     key_signature: dict[str, str] = field(default_factory=dict)  # note -> accidental
     transpose: int = 0  # Transposition in semitones
@@ -153,7 +160,10 @@ class GeneratorState:
     # which is what makes a global attribute at the top of a score apply to
     # the whole score.
     global_attributes: dict[str, object] = field(default_factory=dict)
-    next_channel: int = 0  # Index into MELODIC_CHANNELS
+    next_channel: int = 0  # Number of virtual channels handed out so far
+    # The virtual channels handed out, in order. Channels are assigned for
+    # real once the whole score is known; see aldakit.midi.channels.
+    allocated_channels: list[int] = field(default_factory=list)
     repetition_number: int = 1  # Current repetition when in a repeat loop
     diagnostics: list[Diagnostic] = field(default_factory=list)
     # Aliased instrument groups: alias -> {instrument name: internal part name}.
@@ -167,6 +177,7 @@ class MidiGenerator(ASTVisitor):
     def __init__(self) -> None:
         self.sequence = MidiSequence()
         self.state = GeneratorState()
+        self.channel_assignment = ChannelAssignment()
 
     def generate(self, ast: RootNode) -> MidiSequence:
         """Generate a MIDI sequence from an Alda AST.
@@ -179,6 +190,7 @@ class MidiGenerator(ASTVisitor):
         """
         self.sequence = MidiSequence()
         self.state = GeneratorState()
+        self.channel_assignment = ChannelAssignment()
 
         # Add initial tempo
         self.sequence.tempo_changes.append(
@@ -188,6 +200,13 @@ class MidiGenerator(ASTVisitor):
         # Process all children
         for child in ast.children:
             self.visit(child)
+
+        # Turn the parts' placeholder channels into real MIDI channels, now
+        # that the score's shape is known.
+        self.channel_assignment = assign_channels(
+            self.sequence, self.state.allocated_channels, self._warn
+        )
+        self._resolve_part_channels()
 
         # Sort events by time
         self.sequence.notes.sort(key=lambda n: n.start_time)
@@ -210,23 +229,32 @@ class MidiGenerator(ASTVisitor):
         self.state.diagnostics.append(Diagnostic(message, position, code))
 
     def _allocate_channel(self) -> int:
-        """Allocate the next melodic MIDI channel, skipping the drum channel.
+        """Allocate a virtual channel for a melodic part.
 
-        There are only 15 melodic channels. Once they are exhausted, channels
-        are reused from the start and a diagnostic is recorded, because the
-        reused channel's program change will be overwritten.
+        Which real channel a part sounds on depends on how many parts the
+        score turns out to have and on when each of them is playing, neither
+        of which is known while the AST is still being walked. Parts are given
+        a placeholder here and :func:`aldakit.midi.channels.assign_channels`
+        rewrites it at the end of generation.
         """
-        index = self.state.next_channel
-        if index >= len(MELODIC_CHANNELS):
-            self._warn(
-                f"More than {len(MELODIC_CHANNELS)} melodic parts declared; "
-                "MIDI channels are being reused and instrument assignments "
-                "will collide.",
-                code="channel-exhaustion",
-            )
-            index %= len(MELODIC_CHANNELS)
+        channel = VIRTUAL_CHANNEL_BASE + self.state.next_channel
         self.state.next_channel += 1
-        return MELODIC_CHANNELS[index]
+        self.state.allocated_channels.append(channel)
+        return channel
+
+    def _resolve_part_channels(self) -> None:
+        """Replace each part's placeholder channel with the real one.
+
+        A part that reuses more than one channel over the course of the score
+        reports the first; the full picture is in ``channel_assignment``.
+        """
+        assigned = self.channel_assignment.channels
+        for part in self.state.parts.values():
+            part.allocated_channel = part.channel
+            if part.channel not in assigned:
+                continue  # percussion, or pinned with (midi-channel)
+            channels = assigned[part.channel]
+            part.channel = channels[0] if channels else -1
 
     def _resolve_group_member(self, name: str) -> str | None:
         """Resolve a dotted group-member reference such as ``strings.cello``.
@@ -392,17 +420,20 @@ class MidiGenerator(ASTVisitor):
         for event in node.events:
             self.visit(event)
 
-    def _process_note(self, node: NoteNode, is_chord: bool = False) -> float:
-        """Process a note, returning its duration in seconds.
+    def _process_note(self, node: NoteNode, is_chord: bool = False) -> dict[int, float]:
+        """Process a note, returning its duration in seconds for each part.
+
+        Active parts can differ in tempo and default duration, so one note
+        written once is a different number of seconds long in each of them.
 
         Args:
             node: The note node.
             is_chord: If True, don't advance time after the note.
 
         Returns:
-            Duration of the note in seconds.
+            Duration in seconds keyed by ``id()`` of the part state.
         """
-        duration_secs = 0.0
+        durations: dict[int, float] = {}
 
         # Process note for each active part (multi-instrument support)
         for part in self._get_all_part_states():
@@ -459,11 +490,13 @@ class MidiGenerator(ASTVisitor):
             if node.duration is not None:
                 part.default_duration = duration_beats
 
+            durations[id(part)] = duration_secs
+
             # Advance time (unless in chord)
             if not is_chord:
                 part.current_time += duration_secs
 
-        return duration_secs
+        return durations
 
     def visit_RestNode(self, node: RestNode) -> None:
         """Process a rest."""
@@ -484,18 +517,25 @@ class MidiGenerator(ASTVisitor):
         # Save start times for all active parts
         all_parts = self._get_all_part_states()
         start_times = {id(p): p.current_time for p in all_parts}
-        max_duration = 0.0
+        # A chord lasts as long as its longest note, which is a per-part
+        # length: in violin/viola: the two parts can be at different tempi,
+        # and advancing both by one part's duration desynchronises them.
+        max_durations: dict[int, float] = {id(p): 0.0 for p in all_parts}
 
         for item in node.notes:
             if isinstance(item, NoteNode):
-                duration = self._process_note(item, is_chord=True)
-                max_duration = max(max_duration, duration)
+                for part_id, duration in self._process_note(
+                    item, is_chord=True
+                ).items():
+                    max_durations[part_id] = max(
+                        max_durations.get(part_id, 0.0), duration
+                    )
             else:
                 self.visit(item)
 
-        # Advance time by the longest note for all parts
+        # Advance each part by its own longest note in the chord
         for part in all_parts:
-            part.current_time = start_times[id(part)] + max_duration
+            part.current_time = start_times[id(part)] + max_durations.get(id(part), 0.0)
 
     def visit_LispListNode(self, node: LispListNode) -> None:
         """Apply an attribute S-expression such as ``(tempo 120)``."""
@@ -933,15 +973,6 @@ class MidiGenerator(ASTVisitor):
     def visit_CramNode(self, node: CramNode) -> None:
         """Process a cram expression."""
         all_parts = self._get_all_part_states()
-        part = all_parts[0]  # Use first part for duration calculation
-
-        # Calculate the total duration for the cram
-        if node.duration:
-            total_beats = self._calculate_duration(node.duration, part)
-        else:
-            total_beats = part.default_duration
-
-        total_secs = self._beats_to_seconds(total_beats, part.tempo)
 
         # Count the number of events (notes/rests)
         event_count = self._count_sounding_events(node.events)
@@ -952,8 +983,13 @@ class MidiGenerator(ASTVisitor):
         # Save current state for all parts
         saved_states = {id(p): (p.current_time, p.default_duration) for p in all_parts}
 
-        # Set a temporary duration for each event in all parts
+        # The cram's length in seconds is per-part: parts can be at different
+        # tempi and, with no explicit duration, carry different defaults.
+        total_secs: dict[int, float] = {}
         for p in all_parts:
+            total_beats = self._calculate_duration(node.duration, p)
+            total_secs[id(p)] = self._beats_to_seconds(total_beats, p.tempo)
+            # Set a temporary duration for each event in this part
             p.default_duration = total_beats / event_count
 
         # Process events
@@ -963,7 +999,7 @@ class MidiGenerator(ASTVisitor):
         for p in all_parts:
             start_time, saved_duration = saved_states[id(p)]
             p.default_duration = saved_duration
-            p.current_time = start_time + total_secs
+            p.current_time = start_time + total_secs[id(p)]
 
     def visit_RepeatNode(self, node: RepeatNode) -> None:
         """Process a repeat expression."""

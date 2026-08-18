@@ -514,6 +514,9 @@ c d e    # Inline comment
 - Track volume (`track-volume`, `track-vol`)
 - Default note length (`set-duration`, `set-note-length`, `set-duration-ms`)
 - Explicit MIDI channel assignment (`midi-channel`)
+- Channel reuse: channels are handed on as parts stop sounding, so a score can
+  have more parts than there are channels
+- Offline audio rendering to WAV (`aldakit render`)
 - Octave attribute
 - The global (`!`) form of every attribute
 - Variables (definition and reference)
@@ -533,14 +536,14 @@ c d e    # Inline comment
 
 ### Known Limitations
 
-- **Channel reuse.** A part keeps its MIDI channel for the whole score, where
-  Alda frees a channel once a part has stopped sounding. A score with more than
-  15 pitched parts therefore has parts sharing a channel and colliding on
-  instrument; `aldakit lint` reports it. This affects
-  `examples/all-instruments.alda` and `examples/midi-channel-management.alda`.
-
 - An attribute aldakit does not recognise is reported by `aldakit lint` and
   ignored, rather than stopping generation.
+
+- **Channel reuse is decided per part, not per note.** A channel is freed when
+  the part on it stops sounding, which is enough for both
+  `examples/all-instruments.alda` and `examples/midi-channel-management.alda`.
+  More than 15 pitched parts sounding at the same instant still cannot fit, and
+  `aldakit lint` reports which parts collide.
 
 ---
 

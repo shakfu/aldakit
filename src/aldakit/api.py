@@ -89,6 +89,53 @@ def save_file(source_path: str | Path, output_path: str | Path) -> None:
     score.save(output_path)
 
 
+def render(
+    source: str,
+    path: str | Path,
+    soundfont: str | Path | None = None,
+) -> Path:
+    """Parse Alda source code and render it to a WAV file.
+
+    Rendering needs no audio device and runs as fast as the CPU allows,
+    unlike `play()`, which takes as long as the score lasts.
+
+    Args:
+        source: Alda source code string.
+        path: Output WAV file path.
+        soundfont: SoundFont to synthesize with, or None to find one.
+
+    Returns:
+        The path written.
+
+    Examples:
+        >>> import aldakit
+        >>> aldakit.render("piano: c d e f g", "scale.wav")
+    """
+    return Score(source).render(path, soundfont)
+
+
+def render_file(
+    source_path: str | Path,
+    output_path: str | Path,
+    soundfont: str | Path | None = None,
+) -> Path:
+    """Parse an Alda file and render it to a WAV file.
+
+    Args:
+        source_path: Path to the Alda file.
+        output_path: Output WAV file path.
+        soundfont: SoundFont to synthesize with, or None to find one.
+
+    Returns:
+        The path written.
+
+    Examples:
+        >>> import aldakit
+        >>> aldakit.render_file("song.alda", "song.wav")
+    """
+    return Score.from_file(source_path).render(output_path, soundfont)
+
+
 def list_ports() -> list[str]:
     """List available MIDI output ports.
 

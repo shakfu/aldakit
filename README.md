@@ -14,6 +14,7 @@ A Python parser and MIDI generator for the [Alda](https://alda.io) music program
 - **MIDI Playback** - Low-latency playback via libremidi (CoreMIDI, ALSA, WinMM)
 - **Audio Playback** - Built-in synthesis via TinySoundFont (no external synth required)
 - **MIDI Export** - Save compositions as Standard MIDI Files
+- **Audio Export** - Render a score to a WAV file, many times faster than real time
 - **MIDI Import** - Load MIDI files and convert to Alda notation
 - **Alda Export** - Serialize any AST back to Alda source, round-trip safe
 - **Real-time Transcription** - Record from MIDI keyboards and convert to Alda
@@ -87,6 +88,9 @@ aldakit.play("piano: c d e f g")
 # Save to MIDI file
 aldakit.save("piano: c d e f g", "output.mid")
 
+# Render to audio, faster than real time and without an audio device
+aldakit.render("piano: c d e f g", "output.wav")
+
 # Play from file
 aldakit.play_file("song.alda")
 
@@ -115,6 +119,9 @@ handle.stop()
 
 # Save to file
 score.save("output.mid")
+
+# Render to a WAV file
+score.render("output.wav")
 
 # Access internals
 print(f"Duration: {score.duration}s")
@@ -336,9 +343,16 @@ print([str(d) for d in score.diagnostics])
 
 `midi-percussion` (alias `percussion`) is placed on MIDI channel 10, where note
 numbers select drum sounds; key signatures and transposition do not apply to it.
-Melodic parts never use that channel. There are 15 melodic channels, so a score
-with more than 15 pitched parts reports a diagnostic that instrument assignments
-will collide.
+Melodic parts never use that channel.
+
+That leaves 15 channels for pitched parts, but a score is not limited to 15 of
+them: a part only holds a channel while it is sounding, so a part that has
+finished hands its channel to one that is about to start, and the instrument,
+pan and volume are set again for the part taking over. This is how
+`examples/all-instruments.alda` plays all 128 General MIDI instruments. Scores
+that fit without reuse keep one channel per part, in declaration order. A
+diagnostic is reported only when more than 15 pitched parts sound at the same
+moment, which no amount of reuse can accommodate.
 
 ### Inspecting and Checking a Score
 
@@ -564,6 +578,7 @@ aldakit [--version] [-h] {repl,play,eval,info,lint,ports,soundfont,transcribe} .
 | `play` | Play an Alda file |
 | `eval` | Evaluate Alda code directly |
 | `info` | Summarise a score: parts, instruments, channels, duration |
+| `render` | Render a score to a WAV file, faster than real time |
 | `lint` | Report problems in a score without playing it |
 | `ports` | List available MIDI ports (both input and output) |
 | `soundfont` | Find, download and verify SoundFonts for the audio backend |
@@ -670,6 +685,33 @@ song.alda
   ---------------------------------------------------
   piano  midi-acoustic-grand-piano     0     0       3
   cello  midi-cello                   42     1       2
+```
+
+### `render` Subcommand
+
+```sh
+aldakit render song.alda                  # writes song.wav
+aldakit render song.alda -o out.wav
+aldakit render -e "piano: c d e" -o scale.wav
+aldakit render song.alda --gain 0.5 --tail 2
+```
+
+Synthesizes the score with a SoundFont and writes a 16-bit stereo WAV, with no
+audio device involved and without waiting for the score to play: a two and a
+half minute score renders in about twelve seconds. The synthesis is the same
+code path playback uses, so the file and the speakers agree.
+
+| Option | Description |
+| ------ | ----------- |
+| `-o, --output FILE` | Output file (default: the input file with a `.wav` suffix) |
+| `-sf, --soundfont FILE` | SoundFont to synthesize with (default: the one playback uses) |
+| `-g, --gain GAIN` | Volume factor, 0.0 to 2.0, where 1.0 is unity |
+| `--tail SECONDS` | Audio rendered after the last note, so release tails are not cut off |
+
+A mix loud enough to clip is reported along with a gain that will not:
+
+```
+Warning: the mix peaked at 2.15 of full scale and was clipped. Try --gain 0.46.
 ```
 
 ### `lint` Subcommand
@@ -1328,6 +1370,30 @@ make test
 # or
 uv run pytest tests/ -v
 ```
+
+### Golden Fixtures
+
+Two sets of fixtures pin what the examples produce, so that an unintended
+change shows up as a reviewable diff rather than as music that quietly sounds
+different:
+
+- `tests/golden/examples.json` pins the notes, channels, programs, timings and
+  velocities of every example. Regenerate with `make golden`.
+- `tests/golden/audio.json` pins what they sound like: every example is
+  rendered with a checksum-pinned SoundFont and its loudness per channel,
+  peak and length are compared. This catches what MIDI cannot -- an instrument
+  that never sounds because its program change went to the wrong channel, or a
+  pan that never reached the synthesizer. Regenerate with `make golden-audio`.
+
+The audio fixtures need the SoundFont they are pinned to, which is not in the
+repository, so they skip if it is absent:
+
+```sh
+make soundfont     # downloads TimGM6mb (6 MB, checksum verified)
+make test-audio    # fails rather than skips if it is missing
+```
+
+CI runs `test-audio` on Linux and macOS.
 
 ### Architecture
 

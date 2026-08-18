@@ -26,8 +26,10 @@
 #include <atomic>
 #include <mutex>
 #include <vector>
+#include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include <stdexcept>
 
 namespace nb = nanobind;
 using namespace nb::literals;  // For _a suffix
@@ -76,6 +78,8 @@ public:
     static constexpr int SAMPLE_RATE = 44100;
     static constexpr float TAIL_SECONDS = 0.5f;  // Release tail after last note
     static constexpr int DRUM_CHANNEL = 9;       // General MIDI percussion channel
+    static constexpr int RENDER_BLOCK_FRAMES = 1024;  // Offline render block
+    static constexpr float MUTE_DB = -100.0f;    // Effectively silent
 
     TsfPlayer()
         : tsf_(nullptr)
@@ -83,6 +87,7 @@ public:
         , playing_(false)
         , current_time_(0.0)
         , global_gain_(1.0f)
+        , last_peak_(0.0f)
     {
         std::memset(&device_, 0, sizeof(device_));
     }
@@ -118,7 +123,7 @@ public:
         }
 
         // Configure output: stereo interleaved, 44.1kHz
-        tsf_set_output(tsf_, TSF_STEREO_INTERLEAVED, SAMPLE_RATE, global_gain_);
+        apply_gain();
 
         return true;
     }
@@ -155,9 +160,7 @@ public:
     void set_gain(float gain) {
         std::lock_guard<std::mutex> lock(mutex_);
         global_gain_ = std::max(0.0f, std::min(2.0f, gain));
-        if (tsf_) {
-            tsf_set_output(tsf_, TSF_STEREO_INTERLEAVED, SAMPLE_RATE, global_gain_);
-        }
+        apply_gain();
     }
 
     /**
@@ -253,21 +256,7 @@ public:
         // Reset playback state
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            current_time_ = 0.0;
-            for (auto& note : scheduled_notes_) {
-                note.started = false;
-                note.stopped = false;
-            }
-            for (auto& pc : scheduled_programs_) {
-                pc.applied = false;
-            }
-            for (auto& cc : scheduled_controls_) {
-                cc.applied = false;
-            }
-            tsf_reset(tsf_);
-            // General MIDI reserves channel 10 (9 zero-indexed) for percussion,
-            // where note numbers select drums from bank 128.
-            tsf_channel_set_bank_preset(tsf_, DRUM_CHANNEL, 128, 0);
+            rewind();
         }
 
         playing_ = true;
@@ -310,11 +299,123 @@ public:
         return current_time_;
     }
 
+    /**
+     * The rate the synthesizer renders at, in samples per second.
+     */
+    int sample_rate() const {
+        return SAMPLE_RATE;
+    }
+
+    /**
+     * Loudest sample of the last render, before clamping.
+     *
+     * Above 1.0 means the render clipped and wants a lower gain.
+     */
+    float last_render_peak() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return last_peak_;
+    }
+
+    /**
+     * Render the schedule to audio without an output device.
+     *
+     * Runs the same event and synthesis loop the device callback uses, but
+     * as fast as the CPU allows rather than in real time, and returns the
+     * result as interleaved stereo 16-bit PCM ready for a WAV data chunk.
+     * The schedule is left rewound, so the player can render or play again.
+     *
+     * @param tail_seconds Extra time rendered after the last note ends, for
+     *                     release tails and reverb. Negative values are
+     *                     treated as zero.
+     */
+    nb::bytes render_pcm16(double tail_seconds) {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if (!tsf_) {
+            throw std::runtime_error("No SoundFont loaded");
+        }
+        if (playing_) {
+            throw std::runtime_error("Cannot render while playing");
+        }
+
+        rewind();
+        last_peak_ = 0.0f;
+
+        const double total = duration() + std::max(0.0, tail_seconds);
+        const size_t total_frames =
+            static_cast<size_t>(total * static_cast<double>(SAMPLE_RATE) + 0.5);
+
+        std::vector<float> block(static_cast<size_t>(RENDER_BLOCK_FRAMES) * 2);
+        std::vector<int16_t> pcm;
+        pcm.reserve(total_frames * 2);
+
+        for (size_t done = 0; done < total_frames;) {
+            const size_t frames = std::min(
+                static_cast<size_t>(RENDER_BLOCK_FRAMES), total_frames - done);
+            render_frames(block.data(), static_cast<ma_uint32>(frames));
+            for (size_t i = 0; i < frames * 2; ++i) {
+                // Clamp before scaling: a loud SoundFont can drive the mix
+                // past full scale, and wrapping it would be heard as a click.
+                // The unclamped peak is kept so the caller can report that
+                // the render clipped and suggest a lower gain.
+                last_peak_ = std::max(last_peak_, std::abs(block[i]));
+                const float sample = std::max(-1.0f, std::min(1.0f, block[i]));
+                pcm.push_back(static_cast<int16_t>(sample * 32767.0f));
+            }
+            done += frames;
+        }
+
+        rewind();
+
+        return nb::bytes(reinterpret_cast<const char*>(pcm.data()),
+                         pcm.size() * sizeof(int16_t));
+    }
+
 private:
     static void audio_callback(ma_device* device, void* output,
                                const void* /* input */, ma_uint32 frame_count) {
         auto* player = static_cast<TsfPlayer*>(device->pUserData);
         player->render_audio(static_cast<float*>(output), frame_count);
+    }
+
+    /**
+     * Apply the global gain as a volume factor. Caller holds the mutex.
+     *
+     * tsf_set_output takes decibels, where 0 is unity and a factor of 1.0
+     * would mean a 12% boost; tsf_set_volume takes the factor this class
+     * documents, where 1.0 is unity. It divides by the factor, so zero is
+     * handled as an explicit mute rather than passed on.
+     */
+    void apply_gain() {
+        if (!tsf_) return;
+        if (global_gain_ <= 0.0f) {
+            tsf_set_output(tsf_, TSF_STEREO_INTERLEAVED, SAMPLE_RATE, MUTE_DB);
+            return;
+        }
+        tsf_set_output(tsf_, TSF_STEREO_INTERLEAVED, SAMPLE_RATE, 0.0f);
+        tsf_set_volume(tsf_, global_gain_);
+    }
+
+    /**
+     * Return the schedule to the start. Caller holds the mutex.
+     */
+    void rewind() {
+        current_time_ = 0.0;
+        for (auto& note : scheduled_notes_) {
+            note.started = false;
+            note.stopped = false;
+        }
+        for (auto& pc : scheduled_programs_) {
+            pc.applied = false;
+        }
+        for (auto& cc : scheduled_controls_) {
+            cc.applied = false;
+        }
+        if (!tsf_) return;
+        tsf_reset(tsf_);
+        // General MIDI reserves channel 10 (9 zero-indexed) for percussion,
+        // where note numbers select drums from bank 128.
+        tsf_channel_set_bank_preset(tsf_, DRUM_CHANNEL, 128, 0);
     }
 
     void render_audio(float* output, ma_uint32 frame_count) {
@@ -325,8 +426,35 @@ private:
             return;
         }
 
-        const double time_per_sample = 1.0 / static_cast<double>(SAMPLE_RATE);
         const double seq_duration = duration();
+
+        render_frames(output, frame_count);
+
+        // Check if playback is complete
+        if (scheduled_notes_.empty()) {
+            // No notes scheduled - stop immediately
+            playing_ = false;
+        } else if (current_time_ > seq_duration + TAIL_SECONDS) {
+            // All notes done + tail time elapsed
+            bool all_stopped = std::all_of(
+                scheduled_notes_.begin(), scheduled_notes_.end(),
+                [](const ScheduledNote& n) { return n.stopped; }
+            );
+            if (all_stopped) {
+                playing_ = false;
+            }
+        }
+    }
+
+    /**
+     * Apply every event that has come due and synthesize frame_count frames.
+     *
+     * This is the whole of the synthesis loop, shared by real-time playback
+     * and offline rendering so that a rendered file and the sound coming out
+     * of the speakers cannot drift apart. Caller holds the mutex.
+     */
+    void render_frames(float* output, ma_uint32 frame_count) {
+        const double time_per_sample = 1.0 / static_cast<double>(SAMPLE_RATE);
 
         for (ma_uint32 i = 0; i < frame_count; ++i) {
             // Apply program changes
@@ -363,21 +491,6 @@ private:
             tsf_render_float(tsf_, output + (i * 2), 1, 0);
             current_time_ += time_per_sample;
         }
-
-        // Check if playback is complete
-        if (scheduled_notes_.empty()) {
-            // No notes scheduled - stop immediately
-            playing_ = false;
-        } else if (current_time_ > seq_duration + TAIL_SECONDS) {
-            // All notes done + tail time elapsed
-            bool all_stopped = std::all_of(
-                scheduled_notes_.begin(), scheduled_notes_.end(),
-                [](const ScheduledNote& n) { return n.stopped; }
-            );
-            if (all_stopped) {
-                playing_ = false;
-            }
-        }
     }
 
     tsf* tsf_;
@@ -386,6 +499,7 @@ private:
     std::atomic<bool> playing_;
     double current_time_;
     float global_gain_;
+    float last_peak_;
 
     std::vector<ScheduledNote> scheduled_notes_;
     std::vector<ScheduledProgram> scheduled_programs_;
@@ -432,6 +546,12 @@ NB_MODULE(_tsf, m) {
              "Stop playback.")
         .def("is_playing", &TsfPlayer::is_playing,
              "Check if currently playing.")
+        .def("sample_rate", &TsfPlayer::sample_rate,
+             "Samples per second the synthesizer renders at")
+        .def("render_pcm16", &TsfPlayer::render_pcm16, "tail_seconds"_a = 0.5,
+             "Render the schedule offline to interleaved stereo 16-bit PCM")
+        .def("last_render_peak", &TsfPlayer::last_render_peak,
+             "Loudest sample of the last render before clamping; >1.0 clipped")
         .def("current_time", &TsfPlayer::current_time,
              "Get current playback position in seconds.");
 }

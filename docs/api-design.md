@@ -491,6 +491,8 @@ src/aldakit/
     generate.py         # Generative functions: euclidean, markov, etc.
   midi/
     generator.py        # AST -> MidiSequence (an ASTVisitor)
+    channels.py         # Assigns MIDI channels, reusing them as parts stop sounding
+    render.py           # Offline synthesis to a WAV file (aldakit render)
     transform.py        # MIDI-level transformers: humanize, swing, quantize
 ```
 

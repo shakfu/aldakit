@@ -6,6 +6,8 @@ Regression cover for:
   were, so four example files played melodic lines as drum hits.
 - D3: parts past the 16th all collapsed onto channel 15 and overwrote each
   other's program changes with no warning.
+- Channel reuse: a part only needs a channel while it is sounding, so a score
+  with more parts than channels is not by itself a problem.
 """
 
 from pathlib import Path
@@ -151,9 +153,13 @@ class TestChannelExhaustion:
             "koto",
             "organ",
         ]
+        # All sixteen play at once, so no amount of channel reuse fits them.
         generator, _ = generate("\n".join(f"{n}: c" for n in names))
-        messages = [str(d) for d in generator.diagnostics]
-        assert any("channels are being reused" in m for m in messages)
+        codes = [d.code for d in generator.diagnostics]
+        assert codes == ["channel-exhaustion"]
+        assert "16 melodic parts sound at the same time" in str(
+            generator.diagnostics[0]
+        )
 
     def test_exactly_fifteen_parts_is_silent(self):
         names = [

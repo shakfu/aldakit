@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Scores can now be rendered to audio files, and a part no longer holds a MIDI channel for the length of a score: it gives the channel up once it has stopped sounding, so a score can have more parts than MIDI has channels. That is what `examples/all-instruments.alda` (128 instruments) and `examples/midi-channel-management.alda` (31 parts) were written to demonstrate, and both were reported as broken by `aldakit lint` until now. Underneath it, a timing bug that desynchronised parts in a group. **Three of the 40 examples generate different MIDI**: two only in which channel each part lands on, and `multi-poly.alda` in how it sounds. No score lost a note. The diff is in `tests/golden/examples.json`.
+
+### Added
+
+- **MIDI channels are handed on as parts stop sounding.** A part occupies a channel only while it is sounding, so a channel a part has finished with goes to the next part that needs one. The part taking it over selects its own instrument and restates its pan and volume, and any controller it does not set itself is returned to the General MIDI default rather than inherited from the part before it -- without which an organ borrowing a piano's channel would also borrow its panning. Reuse is a fallback rather than the default: a score with 15 or fewer melodic parts still gets one channel per part in declaration order, and its MIDI is unchanged. Within reuse a part prefers the channel it last used, so a part with rests in it keeps one channel instead of moving between whichever are free.
+
+- **`aldakit/midi/channels.py`** decides this, after the AST has been walked and the shape of the score is known. `MidiGenerator.channel_assignment` exposes what it decided: which real channels each part used, which parts overlap on a channel, and how many parts sound at once.
+
+- **`aldakit info` reports every channel a part uses** (`0,1` for a part that moved), or `-` for a part that never sounds and so needs none.
+
+- **`aldakit render FILE` writes a score to a WAV file**, synthesized with a SoundFont, with no audio device involved and without waiting for the score to play: `all-instruments.alda` is two and a half minutes long and renders in twelve seconds. `-o` names the output (the input file with a `.wav` suffix by default), `-sf` the SoundFont, `-g` the gain and `--tail` how much is rendered after the last note so that release tails are not cut off. A mix loud enough to clip is reported along with a gain that will not clip. `aldakit.render()`, `aldakit.render_file()` and `Score.render()` are the same thing from Python.
+
+- **Golden audio fixtures.** `tests/golden/audio.json` pins what every example *sounds* like -- loudness per channel over quarter-second windows, the peak, and the length -- next to the golden MIDI fixtures that pin what the generator decided. It closes the gap that every defect in this project's history has fallen through: MIDI that is perfectly well formed and sounds wrong. Deleting the control changes on the way to the synthesizer, for instance, leaves all 203 golden MIDI assertions passing and fails four audio fixtures. Regenerate with `make golden-audio`; CI runs the comparison on Linux and macOS.
+
+- **`aldakit/midi/render.py`** holds it, on top of a new `render_pcm16()` in the TinySoundFont binding. Offline rendering and real-time playback now run the same synthesis loop -- the audio callback is a caller of it rather than the owner of it -- so a rendered file and the sound coming out of the speakers cannot disagree.
+
+### Fixed
+
+- **A chord desynchronised parts that were at different tempi.** In a multi-instrument part (`violin/viola:`) a chord advanced every active part by the duration of whichever part happened to be processed last. Two parts at 60 and 240 BPM came out of a shared quarter-note chord with the slower one three quarters of a second early, and everything after it stayed that far out. Each part now advances by its own longest note in the chord.
+
+- **A cram took its length from the first part in the group.** `{c d e}` fills the part's current default duration, which parts in a group need not agree on. `multi-poly.alda` is the case this was hiding: the piano crams three notes into a whole note and the harp three into a half note, a 2:1 polyrhythm, but the harp was given the piano's whole note and played on for two seconds after the piano had finished, half as long again as the score. Both parts now end together, twelve harp notes against six.
+
+- **`all-instruments.alda` and `midi-channel-management.alda` play as written.** All 128 General MIDI programs are heard in the first, where previously the parts past the fifteenth overwrote each other's instrument on a shared channel. Both lint clean.
+
+- **`aldakit lint` no longer reports a score as broken for declaring more parts than there are channels.** `too-many-parts` is reported when more melodic parts sound at the same moment than there are channels to put them on, which is the number that has to fit, and `shared-channel` when two parts actually overlap in time on one channel rather than merely being assigned to it.
+
+- **The audio backend's gain was in the wrong unit.** `gain` is documented as a volume factor from 0.0 to 2.0 where 1.0 is unity, but it was passed to TinySoundFont's `tsf_set_output`, whose argument is decibels. Every gain in the documented range was therefore a small boost: the default of 1.0 was +1 dB rather than unity, 0.5 was +0.5 dB rather than half, and 0.0 was 0 dB -- full volume, not silence. It now goes through `tsf_set_volume`, so halving the gain halves the level and zero is silent. Audio playback at the default is about 12% quieter than it was, which is what unity means.
+
+### Changed - internal
+
+- **The generator hands out placeholder channels** (`VIRTUAL_CHANNEL_BASE` and up, allocated without limit) while it walks the AST, because whether reuse is needed cannot be known until the last part has been declared. `PartState.channel` holds a real channel again once `generate()` returns, or -1 for a part that never sounds; `PartState.allocated_channel` keeps the placeholder so the linter can attribute a shared channel back to the parts sharing it.
+
+- **`MELODIC_CHANNELS` moved to `aldakit/midi/channels.py`** and is re-exported from `midi/generator.py`, so existing imports are unaffected.
+
+### Changed - build and CI
+- **A `Golden audio` job** renders every example against the pinned fixtures on Linux and macOS. It caches the SoundFont, keyed on the download catalog, so a run does not depend on a third-party site being up, retries the download if the cache misses and the site is unreachable, and sets `ALDAKIT_REQUIRE_AUDIO_FIXTURES`, which turns "no SoundFont, nothing to compare" from a skip into a failure -- a green tick for a comparison that never ran is worse than no comparison.
+
+- **`make golden-audio`, `make soundfont` and `make test-audio`.** `make generated` is unchanged and still needs no download.
+
+- **The test matrix now covers the ends of the supported range on every platform.** It pinned 3.10 and 3.13 across the three operating systems and filled in 3.11, 3.12 and 3.14 on Linux, which left 3.14 -- the newest version, and one the wheels are built for -- untested on macOS and Windows. The base matrix is now 3.10 and 3.14 everywhere, with 3.11 to 3.13 filled in on Linux: the same nine jobs, covering the two versions most likely to break on a platform-specific problem. Verified locally on macOS: the extensions build against 3.14.7 and the suite passes.
+
+### Changed - documentation
+
+- The README's channel section described the 15-channel limit as a hard one; it now describes what reuse does and when a diagnostic is still reported.
+
+- `docs/reference.md` drops "channel reuse" from its known limitations and lists it as supported, with the remaining limitation stated precisely: reuse is decided per part rather than per note. Offline rendering joins the supported list.
+
+- The README documents the `render` subcommand and its options, `aldakit.render()` / `Score.render()` in the quick start, and gains an "Audio Export" line in the feature list and a `render` row in the subcommand table.
+
+- The README's Development section gains a "Golden Fixtures" section: what each of the two fixture sets pins, how to regenerate them, and how to get the SoundFont the audio ones need.
+
+- The module map in `docs/api-design.md` covers `midi/channels.py` and `midi/render.py`.
+
+### Tests
+
+- 2115 tests, 92% coverage (from 1989 tests). `aldakit/midi/channels.py` and `aldakit/midi/render.py` are both at 100%.
+
+- `tests/test_channel_reuse.py` (42 tests) covers reuse as a fallback, a part keeping its channel across a rest, a part continuing on another channel when its own is gone, instrument and controller state following the part across a handover, percussion and `(midi-channel)` pins being left alone, overflow when more than 15 parts sound at once, and both examples. Removing the controller reset, the channel stickiness, the pinned-channel reservation or the handover program change each fails the test written for it.
+
+- `tests/test_multipart_timing.py` (9 tests) covers chords and crams across parts that differ in tempo and in default note length, including that a cram restores the default duration it borrowed. Six of the nine fail against the previous implementation.
+
+- `tests/test_analysis.py::TestExamples` asserted that two examples were expected to have errors; it now asserts that none does.
+
+- `tests/test_golden_audio.py` (48 tests) compares rendered audio against the fixtures. A failure reports where the audio diverged, by how much, and how many windows are out, because one window out is a note that changed while nearly all of them out by the same factor is a change in level or a tolerance too tight for the platform. It also asserts invariants on the fixtures themselves: that none is silent, that none clips at the fixture gain (a clamped mix hides a change in level -- one example did clip, which is why the fixtures render at 0.15 rather than 0.4), that both fixture sets cover the same examples, and that the panned example really does differ between channels, without which a pan regression could not fail.
+
+- `tests/test_render.py` (25 tests) renders audio and asserts on it: length against `MidiSequence.duration()` plus the tail, silence where the score rests, sound where it does not, gain as a linear factor, determinism between two renders of one score, and the `render` subcommand's arguments and clipping warning. It also renders `all-instruments.alda` and fails if the audio falls silent anywhere, which is the only test in the suite that hears whether a channel handover actually worked. All of it skips when no SoundFont is installed.
+
 ## [0.2.1]
 
 Three new subcommands -- `soundfont`, `info` and `lint` -- and a structural cleanup underneath them. The cleanup made several silent bugs visible, so **22 of the 40 examples now generate different MIDI**: 14 only in which channel each part lands on, and eight in how they sound. No score lost a note. The diff is in `tests/golden/examples.json`.

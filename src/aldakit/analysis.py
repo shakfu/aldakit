@@ -54,9 +54,14 @@ class PartInfo:
 
     name: str
     program: int
+    #: The channel the part sounds on first, or -1 if it never sounds. A part
+    #: can move between channels in a score that has to reuse them; see
+    #: ``channels``.
     channel: int
     percussion: bool = False
     note_count: int = 0
+    #: Every channel the part sounds on, in the order it uses them.
+    channels: tuple[int, ...] = ()
     key_signature: dict[str, str] = field(default_factory=dict)
     transpose: int = 0
 
@@ -117,9 +122,11 @@ def inspect_score(source: str, filename: str = "<input>") -> ScoreInfo:
     generator = MidiGenerator()
     sequence = generator.generate(ast)
 
-    notes_per_channel: dict[int, int] = {}
-    for note in sequence.notes:
-        notes_per_channel[note.channel] = notes_per_channel.get(note.channel, 0) + 1
+    # Counted before channels were assigned: once a channel can carry two
+    # parts at different points in the score, the notes on it no longer say
+    # which part played them.
+    assignment = generator.channel_assignment
+    notes_per_part = assignment.note_counts
 
     parts = [
         PartInfo(
@@ -127,9 +134,12 @@ def inspect_score(source: str, filename: str = "<input>") -> ScoreInfo:
             program=state.program,
             channel=state.channel,
             percussion=state.percussion,
-            note_count=notes_per_channel.get(state.channel, 0),
+            note_count=notes_per_part.get(state.allocated_channel, 0),
             key_signature=dict(state.key_signature),
             transpose=state.transpose,
+            channels=tuple(
+                assignment.channels.get(state.allocated_channel, [state.channel])
+            ),
         )
         for name, state in generator.state.parts.items()
     ]
@@ -263,34 +273,39 @@ def _sequence_findings(generator: MidiGenerator) -> list[Finding]:
             )
         )
 
-    melodic_parts = [s for s in generator.state.parts.values() if not s.percussion]
-    if len(melodic_parts) > len(MELODIC_CHANNELS):
-        # The generator also reports this; keep the count in the message here.
+    # A score may declare far more parts than there are channels and still be
+    # fine, because a part only holds a channel while it is sounding. What has
+    # to fit in the 15 melodic channels is how many parts play at once.
+    assignment = generator.channel_assignment
+    if assignment.overflowed:
         findings.append(
             Finding(
                 code="too-many-parts",
                 message=(
-                    f"{len(melodic_parts)} melodic parts declared but only "
-                    f"{len(MELODIC_CHANNELS)} MIDI channels are available."
+                    f"{assignment.max_concurrent} melodic parts sound at the "
+                    f"same time but only {len(MELODIC_CHANNELS)} MIDI channels "
+                    "are available."
                 ),
                 severity=ERROR,
             )
         )
 
-    channels: dict[int, list[str]] = {}
-    for name, state in generator.state.parts.items():
-        channels.setdefault(state.channel, []).append(name)
-    for channel, names in sorted(channels.items()):
-        if len(names) > 1:
-            findings.append(
-                Finding(
-                    code="shared-channel",
-                    message=(
-                        f"Parts {', '.join(sorted(names))} share MIDI channel "
-                        f"{channel}; their instruments will collide."
-                    ),
-                    severity=ERROR,
-                )
+    names_by_channel = {
+        state.allocated_channel: name for name, state in generator.state.parts.items()
+    }
+    for channel, first, second in assignment.conflicts:
+        names = sorted(
+            names_by_channel.get(owner, f"channel {owner}") for owner in (first, second)
+        )
+        findings.append(
+            Finding(
+                code="shared-channel",
+                message=(
+                    f"Parts {names[0]} and {names[1]} play at the same time on "
+                    f"MIDI channel {channel}; their instruments will collide."
+                ),
+                severity=ERROR,
             )
+        )
 
     return findings

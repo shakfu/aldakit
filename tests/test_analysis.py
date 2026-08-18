@@ -194,20 +194,18 @@ class TestFindingFormatting:
 class TestExamples:
     """What linting the bundled examples reports.
 
-    Two examples declare more than the 15 available melodic channels. aldakit
-    assigns a channel per part for the life of the score, where Alda reuses a
-    channel once a part has stopped sounding, so these are the known limit
-    rather than broken examples -- and this test is where that is written down.
+    Every bundled example must lint without errors. Two of them declare far
+    more parts than there are MIDI channels -- all-instruments.alda plays 128
+    instruments -- and they pass because channels are handed on once a part
+    has stopped sounding, which is what those two examples exist to show.
     """
-
-    KNOWN_CHANNEL_LIMITED = {"all-instruments.alda", "midi-channel-management.alda"}
 
     def _examples(self):
         from pathlib import Path
 
         return sorted((Path(__file__).parent.parent / "examples").glob("*.alda"))
 
-    def test_only_the_channel_limited_examples_have_errors(self):
+    def test_no_example_has_errors(self):
         offenders = {}
         for path in self._examples():
             findings = lint_score(path.read_text(encoding="utf-8"), path.name)
@@ -215,13 +213,7 @@ class TestExamples:
             if errors:
                 offenders[path.name] = sorted({f.code for f in errors})
 
-        assert set(offenders) == self.KNOWN_CHANNEL_LIMITED
-        for codes_found in offenders.values():
-            assert codes_found == [
-                "channel-exhaustion",
-                "shared-channel",
-                "too-many-parts",
-            ]
+        assert offenders == {}
 
     def test_every_example_can_be_linted(self):
         for path in self._examples():

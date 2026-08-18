@@ -7,7 +7,7 @@ endef
 .PHONY: all sync resync build test clean format lint typecheck check  \
 		reset publish publish-test assets qa wheel release \
 		coverage test-review docs docs-serve docs-deploy \
-		golden instruments generated
+		golden golden-audio soundfont test-audio instruments generated
 
 all: sync
 
@@ -47,6 +47,22 @@ instruments:
 # notes changed, so an unintended change to how a score sounds is not silent.
 golden:
 	@uv run python scripts/gen_golden_midi.py
+
+# Regenerate the golden audio fixtures. Renders every example with the pinned
+# SoundFont, which takes about a minute; run 'make soundfont' first if it is
+# not installed. Not part of 'generated', which must work without a download.
+golden-audio:
+	@uv run python scripts/gen_golden_audio.py
+
+# Download the SoundFont the audio fixtures are pinned to.
+soundfont:
+	@uv run aldakit soundfont install TimGM6mb
+
+# Run the tests that need audio, failing rather than skipping if the pinned
+# SoundFont is missing. This is what CI runs.
+test-audio:
+	@ALDAKIT_REQUIRE_AUDIO_FIXTURES=1 uv run python -m pytest \
+		tests/test_golden_audio.py tests/test_render.py -q
 
 generated: instruments golden
 
