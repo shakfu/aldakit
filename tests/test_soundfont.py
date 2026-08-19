@@ -223,6 +223,45 @@ class TestSoundFontManager:
         assert result == target
         assert target.read_bytes() == b"new data"
 
+    def test_a_refused_download_says_how_to_get_the_file(self, tmp_path, monkeypatch):
+        """A host behind a bot challenge answers every retry with 403.
+
+        Reporting the status code alone leaves the reader with nothing to do,
+        so the error names the URL a browser can still fetch and the path to
+        save it to.
+        """
+        import urllib.error
+
+        def refuse(url, path, callback):
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+
+        monkeypatch.setattr(SoundFontManager, "_download_file", staticmethod(refuse))
+        manager = SoundFontManager(soundfont_dir=tmp_path)
+
+        with pytest.raises(RuntimeError) as excinfo:
+            manager.download("TimGM6mb")
+
+        message = str(excinfo.value)
+        assert "retrying will not help" in message
+        assert SOUNDFONT_CATALOG["TimGM6mb"]["url"] in message
+        assert str(tmp_path / "TimGM6mb.sf2") in message
+
+    def test_an_ordinary_download_failure_is_reported_plainly(
+        self, tmp_path, monkeypatch
+    ):
+        """A 404 is not a bot challenge, so it gets no browser advice."""
+        import urllib.error
+
+        def missing(url, path, callback):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        monkeypatch.setattr(SoundFontManager, "_download_file", staticmethod(missing))
+        manager = SoundFontManager(soundfont_dir=tmp_path)
+
+        with pytest.raises(RuntimeError, match="404") as excinfo:
+            manager.download("TimGM6mb")
+        assert "retrying will not help" not in str(excinfo.value)
+
     def test_ensure_returns_existing(self, tmp_path, monkeypatch):
         """Ensure returns existing SoundFont if available."""
         monkeypatch.delenv("ALDAKIT_SOUNDFONT", raising=False)

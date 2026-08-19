@@ -10,32 +10,44 @@ import hashlib
 import os
 import shutil
 import tempfile
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 from ..constants import SOUNDFONT_ENV_VAR
 
-# Available SoundFonts for download (public domain / freely distributable)
+# SoundFonts are mirrored on aldakit's own releases. They used to be fetched
+# from the site each was published on, which put itself behind a bot challenge
+# that answers every automated request with 403, so no version of the download
+# worked any more. These are byte-identical copies of the same files, verified
+# against the checksums below.
+#
+# The three are freely redistributable, under three different licences:
+# FluidR3_GM is MIT, TimGM6mb is GPL-2 and GeneralUser GS carries its author's
+# own permissive licence. SOUNDFONT-LICENSES.txt on the release records each
+# one in full. They are third-party works, not part of aldakit.
+SOUNDFONT_RELEASE = "https://github.com/shakfu/aldakit/releases/download/soundfonts-v1"
+
 SOUNDFONT_CATALOG: dict[str, dict] = {
     "FluidR3_GM": {
-        "url": "https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2",
+        "url": f"{SOUNDFONT_RELEASE}/FluidR3_GM.sf2",
         "filename": "FluidR3_GM.sf2",
-        "size_mb": 141,
+        "size_mb": 148.4,
         "description": "High-quality GM SoundFont (large)",
         "sha256": "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0",
     },
     "GeneralUser_GS": {
-        "url": "https://musical-artifacts.com/artifacts/6789/GeneralUser-GS.sf2",
+        "url": f"{SOUNDFONT_RELEASE}/GeneralUser-GS.sf2",
         "filename": "GeneralUser-GS.sf2",
-        "size_mb": 31,
+        "size_mb": 32.3,
         "description": "Well-balanced GM/GS SoundFont",
         "sha256": "c278464b823daf9c52106c0957f752817da0e52964817ff682fe3a8d2f8446ce",
     },
     "TimGM6mb": {
-        "url": "https://musical-artifacts.com/artifacts/7293/TimGM6mb.sf2",
+        "url": f"{SOUNDFONT_RELEASE}/TimGM6mb.sf2",
         "filename": "TimGM6mb.sf2",
-        "size_mb": 5.8,
+        "size_mb": 6.0,
         "description": "Compact GM SoundFont, good quality for size",
         "sha256": "82475b91a76de15cb28a104707d3247ba932e228bada3f47bba63c6b31aaf7a1",
     },
@@ -265,7 +277,12 @@ class SoundFontManager:
             tmp_path = Path(tmp.name)
 
         try:
-            self._download_file(url, tmp_path, progress_callback)
+            try:
+                self._download_file(url, tmp_path, progress_callback)
+            except urllib.error.HTTPError as exc:
+                raise RuntimeError(
+                    self._download_refused(exc, name, url, target_path)
+                ) from exc
 
             # Verify hash if provided
             if info.get("sha256"):
@@ -407,6 +424,29 @@ class SoundFontManager:
             results[name] = actual_hash == expected_hash
 
         return results
+
+    @staticmethod
+    def _download_refused(
+        error: urllib.error.HTTPError, name: str, url: str, target: Path
+    ) -> str:
+        """Explain a refused download, and how to get the file by hand.
+
+        A host that has put itself behind a bot challenge answers every
+        automated request with 403 no matter how often it is retried, so the
+        useful thing to report is not the status code but that a browser will
+        still work and where to put what it downloads.
+        """
+        blocked = error.code in (401, 403) or error.headers.get("cf-mitigated")
+        if not blocked:
+            return f"{name} could not be downloaded: {error}"
+        return (
+            f"{name} could not be downloaded: the host refused the request "
+            f"({error}). This usually means it is behind a bot challenge that "
+            f"only a browser can answer, and retrying will not help.\n"
+            f"  Download it yourself from: {url}\n"
+            f"  and save it as: {target}\n"
+            f"  then check it with: aldakit soundfont verify"
+        )
 
     @staticmethod
     def _download_file(

@@ -1177,11 +1177,17 @@ The audio backend requires a General MIDI SoundFont file. aldakit searches these
 
 **Option 1: Download manually**
 
-Download a SoundFont and place it in a folder such as `~/Music/sf2/`:
+Download a SoundFont and place it in a folder such as `~/Music/sf2/`. These are
+mirrored on aldakit's [soundfonts-v1](https://github.com/shakfu/aldakit/releases/tag/soundfonts-v1)
+release, which is where `aldakit soundfont install` fetches them from:
 
-- [FluidR3_GM.sf2](https://musical-artifacts.com/artifacts/738/FluidR3_GM.sf2) (142 MB, high quality)
-- [GeneralUser-GS.sf2](https://musical-artifacts.com/artifacts/6789/GeneralUser-GS.sf2) (31 MB, balanced)
-- [TimGM6mb.sf2](https://musical-artifacts.com/artifacts/7293/TimGM6mb.sf2) (5.8 MB, compact)
+- [FluidR3_GM.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/FluidR3_GM.sf2) (148 MB, high quality, MIT)
+- [GeneralUser-GS.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/GeneralUser-GS.sf2) (32 MB, balanced, author's own licence)
+- [TimGM6mb.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/TimGM6mb.sf2) (6 MB, compact, GPL-2)
+
+They are third-party works, not part of aldakit;
+[SOUNDFONT-LICENSES.txt](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/SOUNDFONT-LICENSES.txt)
+on the same release records each licence in full.
 
 Suggest using a `sha256sum` (macOs or Linux) or similar to verify file integrity after download:
 

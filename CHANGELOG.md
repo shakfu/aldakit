@@ -41,6 +41,10 @@ Scores can now be rendered to audio files, and a part no longer holds a MIDI cha
 - **`MELODIC_CHANNELS` moved to `aldakit/midi/channels.py`** and is re-exported from `midi/generator.py`, so existing imports are unaffected.
 
 ### Changed - build and CI
+- **The SoundFonts are mirrored on aldakit's own `soundfonts-v1` release.** The site all three were downloaded from has put itself behind a bot challenge that answers every automated request with 403, which broke `aldakit soundfont install` completely -- for every SoundFont, for every user, no matter how often it retried. The catalog now points at byte-identical copies attached to a release of this repository, verified against the same checksums as before, so nothing that depends on the exact bytes had to change. `SOUNDFONT-LICENSES.txt` on that release records each licence in full: FluidR3_GM is MIT, TimGM6mb is GPL-2, and GeneralUser GS carries its author's own permissive licence. They remain third-party works, not part of aldakit.
+
+- **A refused download explains itself.** A host behind a bot challenge answers every retry with 403, so reporting the status code alone leaves the reader with nothing to do. The error now says that retrying will not help, and names both the URL a browser can still fetch and the path to save it to. An ordinary failure such as a 404 is still reported plainly.
+
 - **A `Golden audio` job** renders every example against the pinned fixtures on Linux and macOS. It caches the SoundFont, keyed on the download catalog, so a run does not depend on a third-party site being up, retries the download if the cache misses and the site is unreachable, and sets `ALDAKIT_REQUIRE_AUDIO_FIXTURES`, which turns "no SoundFont, nothing to compare" from a skip into a failure -- a green tick for a comparison that never ran is worse than no comparison.
 
 - **`make golden-audio`, `make soundfont` and `make test-audio`.** `make generated` is unchanged and still needs no download.

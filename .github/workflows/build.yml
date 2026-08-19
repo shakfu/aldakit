@@ -92,19 +92,19 @@ jobs:
       - name: Install project
         run: uv sync
 
-      # The fixtures are pinned to one SoundFont, a 6 MB download from a
-      # third-party site. Cache it so that a run does not depend on that site
-      # being up, keyed on the catalog so that changing the pinned SoundFont
-      # or its checksum fetches the new one.
+      # The fixtures are pinned to one SoundFont, a 6 MB asset on this
+      # repository's own soundfonts-v1 release. Cache it so that most runs
+      # fetch nothing at all, keyed on the catalog so that changing the
+      # pinned SoundFont or its checksum fetches the new one.
       - name: Cache the pinned SoundFont
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.aldakit/soundfonts
           key: soundfont-TimGM6mb-${{ hashFiles('src/aldakit/midi/soundfont.py') }}
 
-      # On a cache hit this is a no-op. On a miss it fetches 6 MB from a
-      # community site, so a transient failure gets two more chances before
-      # the job goes red over someone else's network.
+      # On a cache hit this is a no-op. On a miss it fetches 6 MB from the
+      # soundfonts-v1 release, so a transient failure gets two more chances
+      # before the job goes red over a blip.
       - name: Install the pinned SoundFont
         run: |
           for attempt in 1 2 3; do
