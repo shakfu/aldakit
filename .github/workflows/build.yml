@@ -51,11 +51,16 @@ jobs:
       - name: Install ALSA headers (libremidi)
         if: runner.os == 'Linux'
         run: |
+          # Each attempt is capped: a mirror that stops responding hangs
+          # apt rather than failing it, and without the cap one bad mirror
+          # holds the runner until the job's timeout. Two minutes is many
+          # times what this takes when the mirrors are healthy.
           for attempt in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+            if sudo timeout 120 apt-get update \
+              && sudo timeout 120 apt-get install -y libasound2-dev; then
               exit 0
             fi
-            echo "apt failed (attempt $attempt); retrying in $((attempt * 10))s"
+            echo "apt failed or hung (attempt $attempt); retrying in $((attempt * 10))s"
             sleep $((attempt * 10))
           done
           echo "::error::Could not install libasound2-dev after 3 tries"
@@ -98,11 +103,16 @@ jobs:
       - name: Install ALSA headers (libremidi)
         if: runner.os == 'Linux'
         run: |
+          # Each attempt is capped: a mirror that stops responding hangs
+          # apt rather than failing it, and without the cap one bad mirror
+          # holds the runner until the job's timeout. Two minutes is many
+          # times what this takes when the mirrors are healthy.
           for attempt in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+            if sudo timeout 120 apt-get update \
+              && sudo timeout 120 apt-get install -y libasound2-dev; then
               exit 0
             fi
-            echo "apt failed (attempt $attempt); retrying in $((attempt * 10))s"
+            echo "apt failed or hung (attempt $attempt); retrying in $((attempt * 10))s"
             sleep $((attempt * 10))
           done
           echo "::error::Could not install libasound2-dev after 3 tries"
