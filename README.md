@@ -1,8 +1,6 @@
 # aldakit
 
-[![PyPI version](https://badge.fury.io/py/aldakit.svg)](https://pypi.org/project/aldakit/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/aldakit.svg)](https://pypi.org/project/aldakit/) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Python parser and MIDI generator for the [Alda](https://alda.io) music programming language, with no install-time dependencies[^1].
 
@@ -11,20 +9,35 @@ A Python parser and MIDI generator for the [Alda](https://alda.io) music program
 ## Features
 
 - **Alda Parser** - Full parser for the Alda music language with AST generation
+
 - **MIDI Playback** - Low-latency playback via libremidi (CoreMIDI, ALSA, WinMM)
+
 - **Audio Playback** - Built-in synthesis via TinySoundFont (no external synth required)
+
 - **MIDI Export** - Save compositions as Standard MIDI Files
+
 - **Audio Export** - Render a score to a WAV file, many times faster than real time
+
 - **MIDI Import** - Load MIDI files and convert to Alda notation
+
 - **Alda Export** - Serialize any AST back to Alda source, round-trip safe
+
 - **Real-time Transcription** - Record from MIDI keyboards and convert to Alda
+
 - **Programmatic Composition** - Build music with Python using the compose module
+
 - **Music Theory** - Scale, chord, and interval utilities
+
 - **Transformers** - Transpose, invert, augment, diminish, and more
+
 - **Generative Music** - Markov chains, L-systems, cellular automata, Euclidean rhythms
+
 - **Interactive REPL** - Syntax highlighting, auto-completion, and live playback
+
 - **Score Checking** - `aldakit lint` and `aldakit info` report what will sound wrong before you play it
+
 - **SoundFont Management** - Find, download and verify SoundFonts from the CLI
+
 - **CLI Tools** - Play, transcribe, and convert from the command line
 
 ## Installation
@@ -193,12 +206,16 @@ score = Score.from_midi_file("recording.mid", quantize_grid=0.5)
 ```
 
 Features:
-- Multi-track MIDI files (each channel becomes a separate part, and stays on
-  its own channel when played or re-exported)
+- Multi-track MIDI files (each channel becomes a separate part, and stays on its own channel when played or re-exported)
+
 - Channel 10 is imported as a `midi-percussion` part
+
 - Tempo detection and preservation
+
 - General MIDI instrument mapping across all 128 programs
+
 - Chord detection for simultaneous notes
+
 - Configurable timing quantization
 
 ### Real-Time MIDI Transcription
@@ -295,20 +312,24 @@ print(score.to_alda())  # "violin: (tempo 90) g8 a b"
 
 Available compose elements:
 - **Notes**: `note("c", duration=4, octave=5, accidental="+", dots=1)`
+
 - **Rests**: `rest(duration=4)`, `rest(ms=500)`
+
 - **Chords**: `chord("c", "e", "g")`, `chord(note("c"), note("e", accidental="+"))`
+
 - **Sequences**: `seq(note("c"), note("d"))`, `Seq.from_alda("c d e")`
+
 - **Parts**: `part("piano")`, `part("violin", alias="v1")`
+
 - **Attributes**: `tempo(120)`, `volume(80)`, `octave(5)`, `panning(50)`
+
 - **Dynamics**: `pp()`, `p()`, `mp()`, `mf()`, `f()`, `ff()`
+
 - **Advanced**: `cram()`, `voice()`, `voice_group()`, `var()`, `var_ref()`, `marker()`, `at_marker()`
 
-Accidentals use Alda's characters: `"+"` (sharp), `"-"` (flat), `"_"` (natural),
-repeated for double accidentals. Anything else raises `ValueError`.
+Accidentals use Alda's characters: `"+"` (sharp), `"-"` (flat), `"_"` (natural), repeated for double accidentals. Anything else raises `ValueError`.
 
-The `octave` a note declares is preserved through both `to_alda()` and MIDI
-generation. Octave is stateful in Alda, so a note only emits an octave change
-where the octave actually changes:
+The `octave` a note declares is preserved through both `to_alda()` and MIDI generation. Octave is stateful in Alda, so a note only emits an octave change where the octave actually changes:
 
 ```python
 from aldakit import Score
@@ -321,8 +342,7 @@ print([n.pitch for n in score.midi.notes])  # [72, 74]
 
 ### Instrument Names
 
-All 128 General MIDI programs are available under their Alda names. Canonical
-names carry the `midi-` prefix, and most have shorter aliases:
+All 128 General MIDI programs are available under their Alda names. Canonical names carry the `midi-` prefix, and most have shorter aliases:
 
 ```alda
 midi-acoustic-grand-piano:  # canonical
@@ -331,9 +351,7 @@ midi-square-lead:           # synth lead
 midi-percussion:            # drum kit on MIDI channel 10
 ```
 
-See [docs/alda-language/list-of-instruments.md](docs/alda-language/list-of-instruments.md)
-for the full list. An unrecognised instrument name falls back to acoustic grand
-piano and reports a warning rather than failing silently:
+See [docs/alda-language/list-of-instruments.md](docs/alda-language/list-of-instruments.md) for the full list. An unrecognised instrument name falls back to acoustic grand piano and reports a warning rather than failing silently:
 
 ```python
 score = Score("bogus-instrument: c d e")
@@ -341,23 +359,13 @@ print([str(d) for d in score.diagnostics])
 # ["<input>:1:1: Unknown instrument 'bogus-instrument'; falling back to acoustic grand piano."]
 ```
 
-`midi-percussion` (alias `percussion`) is placed on MIDI channel 10, where note
-numbers select drum sounds; key signatures and transposition do not apply to it.
-Melodic parts never use that channel.
+`midi-percussion` (alias `percussion`) is placed on MIDI channel 10, where note numbers select drum sounds; key signatures and transposition do not apply to it. Melodic parts never use that channel.
 
-That leaves 15 channels for pitched parts, but a score is not limited to 15 of
-them: a part only holds a channel while it is sounding, so a part that has
-finished hands its channel to one that is about to start, and the instrument,
-pan and volume are set again for the part taking over. This is how
-`examples/all-instruments.alda` plays all 128 General MIDI instruments. Scores
-that fit without reuse keep one channel per part, in declaration order. A
-diagnostic is reported only when more than 15 pitched parts sound at the same
-moment, which no amount of reuse can accommodate.
+That leaves 15 channels for pitched parts, but a score is not limited to 15 of them: a part only holds a channel while it is sounding, so a part that has finished hands its channel to one that is about to start, and the instrument, pan and volume are set again for the part taking over. This is how `examples/all-instruments.alda` plays all 128 General MIDI instruments. Scores that fit without reuse keep one channel per part, in declaration order. A diagnostic is reported only when more than 15 pitched parts sound at the same moment, which no amount of reuse can accommodate.
 
 ### Inspecting and Checking a Score
 
-The problems the generator finds are available as values, not just as CLI
-output, so a build step or an editor plugin can use them:
+The problems the generator finds are available as values, not just as CLI output, so a build step or an editor plugin can use them:
 
 ```python
 from aldakit import inspect_score, lint_score
@@ -372,11 +380,7 @@ for finding in lint_score("piano: nosuchvar"):
     # error undefined-variable Undefined variable 'nosuchvar'.
 ```
 
-`lint_score()` reports unknown instruments and attributes, undefined variables
-and markers, notes clamped into the MIDI range, unused and redefined variables,
-and parts that collide on a channel. Each finding carries a `code`, a
-`severity` and the source position. The `aldakit info` and `aldakit lint`
-commands are thin wrappers over these two functions.
+`lint_score()` reports unknown instruments and attributes, undefined variables and markers, notes clamped into the MIDI range, unused and redefined variables, and parts that collide on a channel. Each finding carries a `code`, a `severity` and the source position. The `aldakit info` and `aldakit lint` commands are thin wrappers over these two functions.
 
 ### Scales and Chords
 
@@ -647,9 +651,7 @@ aldakit repl [-v] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--sequential] 
 
 ### `soundfont` Subcommand
 
-The audio backend needs a General MIDI SoundFont. This finds, fetches and
-checks them; downloads land in `~/.aldakit/soundfonts/` and are verified
-against a SHA256 checksum.
+The audio backend needs a General MIDI SoundFont. This finds, fetches and checks them; downloads land in `~/.aldakit/soundfonts/` and are verified against a SHA256 checksum.
 
 ```sh
 aldakit soundfont list              # installed files and the download catalog
@@ -660,9 +662,7 @@ aldakit soundfont verify            # re-check the downloaded files
 aldakit soundfont path              # print the one playback would use
 ```
 
-If you ask for audio playback and no SoundFont can be found, aldakit offers to
-download one, so the usual first run is a single prompt rather than an error.
-Non-interactive runs (scripts, CI) get the error instead of a prompt.
+If you ask for audio playback and no SoundFont can be found, aldakit offers to download one, so the usual first run is a single prompt rather than an error. Non-interactive runs (scripts, CI) get the error instead of a prompt.
 
 ### `info` Subcommand
 
@@ -671,8 +671,7 @@ aldakit info song.alda
 aldakit info -e "piano: c d e"
 ```
 
-Prints the parts, their instruments, MIDI programs, channels and note counts,
-along with the tempo, duration, variables and markers:
+Prints the parts, their instruments, MIDI programs, channels and note counts, along with the tempo, duration, variables and markers:
 
 ```
 song.alda
@@ -696,10 +695,7 @@ aldakit render -e "piano: c d e" -o scale.wav
 aldakit render song.alda --gain 0.5 --tail 2
 ```
 
-Synthesizes the score with a SoundFont and writes a 16-bit stereo WAV, with no
-audio device involved and without waiting for the score to play: a two and a
-half minute score renders in about twelve seconds. The synthesis is the same
-code path playback uses, so the file and the speakers agree.
+Synthesizes the score with a SoundFont and writes a 16-bit stereo WAV, with no audio device involved and without waiting for the score to play: a two and a half minute score renders in about twelve seconds. The synthesis is the same code path playback uses, so the file and the speakers agree.
 
 | Option | Description |
 | ------ | ----------- |
@@ -721,9 +717,7 @@ aldakit lint song.alda
 aldakit lint -e "piano: c" --strict
 ```
 
-Reports what will make a score sound wrong without playing it: unknown
-instruments, undefined variables and markers, unknown attributes, notes clamped
-into the MIDI range, unused variables, and parts that collide on a channel.
+Reports what will make a score sound wrong without playing it: unknown instruments, undefined variables and markers, unknown attributes, notes clamped into the MIDI range, unused variables, and parts that collide on a channel.
 
 | Option | Description |
 | ------ | ----------- |
@@ -732,9 +726,7 @@ into the MIDI range, unused variables, and parts that collide on a channel.
 | `-q, --quiet` | Print nothing; report through the exit status |
 | `--strict` | Exit non-zero on warnings as well as errors |
 
-Exit status is 0 when clean, 1 when an error was found (or any finding under
-`--strict`), and 2 when the score does not parse -- so `aldakit lint --strict`
-works as a build step.
+Exit status is 0 when clean, 1 when an error was found (or any finding under `--strict`), and 2 when the score does not parse -- so `aldakit lint --strict` works as a build step.
 
 ### `transcribe` Subcommand
 
@@ -824,7 +816,9 @@ aldakit transcribe -d 20 -t 90 -i guitar --feel triplet --play
 aldakit supports INI-format configuration files to set default values for common options. Configuration is loaded from these locations (in priority order):
 
 1. `./aldakit.ini` - Project-local config (current working directory)
+
 2. `~/.aldakit/config.ini` - User config (home directory)
+
 3. `ALDAKIT_SOUNDFONT` environment variable (for soundfont only)
 
 CLI arguments always override config file settings.
@@ -863,26 +857,26 @@ verbose = false
 
 **Backend values:**
 - `midi` (default): Uses libremidi for MIDI output. Sends to external synthesizers (FluidSynth, hardware), DAWs, or creates a virtual port ("AldakitMIDI") for routing.
+
 - `audio`: Uses built-in TinySoundFont for direct audio output. Requires a `soundfont` to be configured. No external MIDI setup needed.
 
 ### Backend Selection Priority
 
 1. CLI `-sf /path/to/soundfont.sf2` forces the audio backend with that SoundFont
-2. CLI `-a` / `--audio` forces the audio backend, using a configured or
-   discovered SoundFont
+
+2. CLI `-a` / `--audio` forces the audio backend, using a configured or discovered SoundFont
+
 3. Config `backend = audio` uses the audio backend
+
 4. If MIDI output ports are available, use MIDI (default)
+
 5. If no MIDI ports are available and a SoundFont can be found, use audio
-6. Otherwise create a virtual MIDI port ("AldakitMIDI") and warn that nothing
-   will be heard until a synth or DAW connects to it
 
-A SoundFont counts as available if it is named by `-sf`, by `soundfont` in the
-config file, or by `ALDAKIT_SOUNDFONT`, or if one is discovered in a standard
-location such as `~/.aldakit/soundfonts/` or `~/Music/sf2/`.
+6. Otherwise create a virtual MIDI port ("AldakitMIDI") and warn that nothing will be heard until a synth or DAW connects to it
 
-If `aldakit play` produces no sound, run `aldakit ports` to see whether any MIDI
-destination exists. With no ports and no SoundFont, MIDI is being sent to a
-virtual port that nothing is listening to.
+A SoundFont counts as available if it is named by `-sf`, by `soundfont` in the config file, or by `ALDAKIT_SOUNDFONT`, or if one is discovered in a standard location such as `~/.aldakit/soundfonts/` or `~/Music/sf2/`.
+
+If `aldakit play` produces no sound, run `aldakit ports` to see whether any MIDI destination exists. With no ports and no SoundFont, MIDI is being sent to a virtual port that nothing is listening to.
 
 ### Project-Local Configuration
 
@@ -907,10 +901,15 @@ aldakit repl
 Features:
 
 - Syntax highlighting
+
 - Auto-completion for instruments (3+ characters)
+
 - Command history (persistent across sessions)
+
 - Multi-line paste (use platform-specific paste: ctrl-v, shift-ctrl-v, cmd-v, etc.)
+
 - Multi-line input (Alt+Enter)
+
 - MIDI playback control (Ctrl+C to stop)
 
 REPL Commands:
@@ -933,8 +932,7 @@ REPL Commands:
 | `:help` | Show help |
 | `:quit` | Exit the REPL |
 
-Open a file directly from the command line. It is loaded, not played, so the
-REPL is ready immediately:
+Open a file directly from the command line. It is loaded, not played, so the REPL is ready immediately:
 
 ```sh
 $ aldakit repl examples/twinkle.alda
@@ -961,20 +959,11 @@ aldakit> :save take-2.alda
 Saved /home/you/music/take-2.alda
 ```
 
-`:load` never plays: a file can be inspected, saved or edited before it is
-heard, and opening a long score does not tie up the prompt. `:play` with no
-argument replays whatever is loaded; `:play FILE` is shorthand for loading and
-playing in one step. Typed input still plays as soon as you press Enter.
+`:load` never plays: a file can be inspected, saved or edited before it is heard, and opening a long score does not tie up the prompt. `:play` with no argument replays whatever is loaded; `:play FILE` is shorthand for loading and playing in one step. Typed input still plays as soon as you press Enter.
 
-`:save` writes everything accepted during the session -- typed, pasted or
-loaded -- as a single score. A `.mid` or `.midi` extension exports MIDI
-instead. Note that this is the session's *source*, not a recording of what you
-heard: in concurrent mode inputs are layered as they play, whereas the saved
-file is one score read top to bottom.
+`:save` writes everything accepted during the session -- typed, pasted or loaded -- as a single score. A `.mid` or `.midi` extension exports MIDI instead. Note that this is the session's *source*, not a recording of what you heard: in concurrent mode inputs are layered as they play, whereas the saved file is one score read top to bottom.
 
-A file opened with `:load` (or given on the command line) keeps its own tempo.
-The REPL only prepends its default tempo to input you type that does not set
-one.
+A file opened with `:load` (or given on the command line) keeps its own tempo. The REPL only prepends its default tempo to input you type that does not set one.
 
 ## Alda Syntax Reference
 
@@ -1110,10 +1099,15 @@ violin:
 All 128 General MIDI instruments are supported. Common examples:
 
 - `piano`, `acoustic-grand-piano`
+
 - `violin`, `viola`, `cello`, `contrabass`
+
 - `flute`, `oboe`, `clarinet`, `bassoon`
+
 - `trumpet`, `trombone`, `french-horn`, `tuba`
+
 - `acoustic-guitar`, `electric-guitar-clean`, `electric-bass`
+
 - `choir`, `strings`, `brass-section`
 
 See [midi/types.py](https://github.com/shakfu/aldakit/blob/main/src/aldakit/midi/types.py) for the complete mapping.
@@ -1123,9 +1117,13 @@ See [midi/types.py](https://github.com/shakfu/aldakit/blob/main/src/aldakit/midi
 aldakit uses [libremidi](https://github.com/jcelerier/libremidi) via [nanobind](https://github.com/wjakob/nanobind) for cross-platform MIDI I/O:
 
 - Low-latency realtime playback
+
 - Virtual MIDI port support (AldakitMIDI), makes it easy to just send to your DAW.
+
 - Pure Python MIDI file writing (no external dependencies)
+
 - Cross-platform: macOS (CoreMIDI), Linux (ALSA), Windows (WinMM)
+
 - Supports hardware and software/virtual MIDI ports (FluidSynth, IAC Driver, etc.)
 
 ```python
@@ -1149,8 +1147,11 @@ aldakit.save("piano: c d e f g", "output.mid")
 For self-contained audio playback without external synthesizers, aldakit includes a built-in audio backend powered by [TinySoundFont](https://github.com/schellingb/TinySoundFont) and [miniaudio](https://github.com/mackron/miniaudio):
 
 - Direct audio output (no FluidSynth or DAW required)
+
 - Cross-platform: macOS (CoreAudio), Linux (ALSA/PulseAudio), Windows (WASAPI)
+
 - Requires a SoundFont file (.sf2) for instrument sounds
+
 - Header-only libraries for minimal binary size
 
 ### Basic Usage
@@ -1171,23 +1172,24 @@ score.play(backend="audio", soundfont="/path/to/FluidR3_GM.sf2")
 The audio backend requires a General MIDI SoundFont file. aldakit searches these locations automatically:
 
 - `$ALDAKIT_SOUNDFONT` environment variable
+
 - `~/Music/sf2/`
+
 - `~/.aldakit/soundfonts/`
+
 - `/usr/share/soundfonts/` (Linux)
 
 **Option 1: Download manually**
 
-Download a SoundFont and place it in a folder such as `~/Music/sf2/`. These are
-mirrored on aldakit's [soundfonts-v1](https://github.com/shakfu/aldakit/releases/tag/soundfonts-v1)
-release, which is where `aldakit soundfont install` fetches them from:
+Download a SoundFont and place it in a folder such as `~/Music/sf2/`. These are mirrored on aldakit's [soundfonts-v1](https://github.com/shakfu/aldakit/releases/tag/soundfonts-v1) release, which is where `aldakit soundfont install` fetches them from:
 
 - [FluidR3_GM.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/FluidR3_GM.sf2) (148 MB, high quality, MIT)
+
 - [GeneralUser-GS.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/GeneralUser-GS.sf2) (32 MB, balanced, author's own licence)
+
 - [TimGM6mb.sf2](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/TimGM6mb.sf2) (6 MB, compact, GPL-2)
 
-They are third-party works, not part of aldakit;
-[SOUNDFONT-LICENSES.txt](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/SOUNDFONT-LICENSES.txt)
-on the same release records each licence in full.
+They are third-party works, not part of aldakit; [SOUNDFONT-LICENSES.txt](https://github.com/shakfu/aldakit/releases/download/soundfonts-v1/SOUNDFONT-LICENSES.txt) on the same release records each licence in full.
 
 Suggest using a `sha256sum` (macOs or Linux) or similar to verify file integrity after download:
 
@@ -1293,7 +1295,9 @@ for i in range(min(10, backend.preset_count)):
 When no hardware MIDI ports are available, aldakit creates a virtual port named "AldakitMIDI". This port is visible to DAWs and other MIDI software:
 
 1. Start the REPL: `aldakit repl`
+
 2. In your DAW (Ableton Live, Logic Pro, etc.), look for "AldakitMIDI" in MIDI input settings
+
 3. Play code in the REPL - notes will be sent to your DAW
 
 ### Software Synthesizer (FluidSynth)
@@ -1379,20 +1383,13 @@ uv run pytest tests/ -v
 
 ### Golden Fixtures
 
-Two sets of fixtures pin what the examples produce, so that an unintended
-change shows up as a reviewable diff rather than as music that quietly sounds
-different:
+Two sets of fixtures pin what the examples produce, so that an unintended change shows up as a reviewable diff rather than as music that quietly sounds different:
 
-- `tests/golden/examples.json` pins the notes, channels, programs, timings and
-  velocities of every example. Regenerate with `make golden`.
-- `tests/golden/audio.json` pins what they sound like: every example is
-  rendered with a checksum-pinned SoundFont and its loudness per channel,
-  peak and length are compared. This catches what MIDI cannot -- an instrument
-  that never sounds because its program change went to the wrong channel, or a
-  pan that never reached the synthesizer. Regenerate with `make golden-audio`.
+- `tests/golden/examples.json` pins the notes, channels, programs, timings and velocities of every example. Regenerate with `make golden`.
 
-The audio fixtures need the SoundFont they are pinned to, which is not in the
-repository, so they skip if it is absent:
+- `tests/golden/audio.json` pins what they sound like: every example is rendered with a checksum-pinned SoundFont and its loudness per channel, peak and length are compared. This catches what MIDI cannot -- an instrument that never sounds because its program change went to the wrong channel, or a pan that never reached the synthesizer. Regenerate with `make golden-audio`.
+
+The audio fixtures need the SoundFont they are pinned to, which is not in the repository, so they skip if it is absent:
 
 ```sh
 make soundfont     # downloads TimGM6mb (6 MB, checksum verified)
@@ -1412,9 +1409,15 @@ MIT
 ## See Also
 
 - [Alda](https://alda.io) - The original Alda language and reference implementation
+
 - [Alda Cheat Sheet](https://alda.io/cheat-sheet/) - Syntax reference
+
 - [Extending aldakit](https://github.com/shakfu/aldakit/blob/main/docs/api-design.md) - Design document for programmatic API
+
 - [libremidi](https://github.com/celtera/libremidi) - A modern C++ MIDI 1 / MIDI 2 real-time & file I/O library. Supports Windows, macOS, Linux and WebMIDI.
+
 - [TinySoundFont](https://github.com/schellingb/TinySoundFont) - SoundFont2 synthesizer library in a single C/C++ header
+
 - [miniaudio](https://github.com/mackron/miniaudio) - Single-header audio playback and capture library
+
 - [nanobind](https://github.com/wjakob/nanobind) - a tiny and efficient C++/Python bindings

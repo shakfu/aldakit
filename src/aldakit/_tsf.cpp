@@ -19,20 +19,20 @@
 
 // miniaudio implementation
 #define MINIAUDIO_IMPLEMENTATION
-#define MA_NO_ENCODING      // We don't need encoding
-#define MA_NO_GENERATION    // We don't need generation
+#define MA_NO_ENCODING   // We don't need encoding
+#define MA_NO_GENERATION // We don't need generation
 #include "miniaudio.h"
 
+#include <algorithm>
 #include <atomic>
-#include <mutex>
-#include <vector>
 #include <cstdint>
 #include <cstring>
-#include <algorithm>
+#include <mutex>
 #include <stdexcept>
+#include <vector>
 
 namespace nb = nanobind;
-using namespace nb::literals;  // For _a suffix
+using namespace nb::literals; // For _a suffix
 
 /**
  * A scheduled MIDI note event.
@@ -40,9 +40,9 @@ using namespace nb::literals;  // For _a suffix
 struct ScheduledNote {
     int channel;
     int key;
-    float velocity;      // 0.0 - 1.0
-    double start_time;   // seconds
-    double end_time;     // seconds
+    float velocity;    // 0.0 - 1.0
+    double start_time; // seconds
+    double end_time;   // seconds
     bool started;
     bool stopped;
 };
@@ -76,10 +76,10 @@ struct ScheduledControl {
 class TsfPlayer {
 public:
     static constexpr int SAMPLE_RATE = 44100;
-    static constexpr float TAIL_SECONDS = 0.5f;  // Release tail after last note
-    static constexpr int DRUM_CHANNEL = 9;       // General MIDI percussion channel
-    static constexpr int RENDER_BLOCK_FRAMES = 1024;  // Offline render block
-    static constexpr float MUTE_DB = -100.0f;    // Effectively silent
+    static constexpr float TAIL_SECONDS = 0.5f; // Release tail after last note
+    static constexpr int DRUM_CHANNEL = 9; // General MIDI percussion channel
+    static constexpr int RENDER_BLOCK_FRAMES = 1024; // Offline render block
+    static constexpr float MUTE_DB = -100.0f;        // Effectively silent
 
     TsfPlayer()
         : tsf_(nullptr)
@@ -92,7 +92,8 @@ public:
         std::memset(&device_, 0, sizeof(device_));
     }
 
-    ~TsfPlayer() {
+    ~TsfPlayer()
+    {
         stop();
         if (device_initialized_) {
             ma_device_uninit(&device_);
@@ -109,7 +110,8 @@ public:
     /**
      * Load a SoundFont file.
      */
-    bool load_soundfont(const std::string& path) {
+    bool load_soundfont(const std::string& path)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (tsf_) {
@@ -131,22 +133,23 @@ public:
     /**
      * Check if a SoundFont is loaded.
      */
-    bool is_loaded() const {
-        return tsf_ != nullptr;
-    }
+    bool is_loaded() const { return tsf_ != nullptr; }
 
     /**
      * Get the number of presets in the loaded SoundFont.
      */
-    int preset_count() const {
-        if (!tsf_) return 0;
+    int preset_count() const
+    {
+        if (!tsf_)
+            return 0;
         return tsf_get_presetcount(tsf_);
     }
 
     /**
      * Get preset name by index.
      */
-    std::string preset_name(int index) const {
+    std::string preset_name(int index) const
+    {
         if (!tsf_ || index < 0 || index >= preset_count()) {
             return "";
         }
@@ -157,7 +160,8 @@ public:
     /**
      * Set the global gain (volume).
      */
-    void set_gain(float gain) {
+    void set_gain(float gain)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         global_gain_ = std::max(0.0f, std::min(2.0f, gain));
         apply_gain();
@@ -166,7 +170,8 @@ public:
     /**
      * Schedule a program change.
      */
-    void schedule_program(int channel, int program, double time) {
+    void schedule_program(int channel, int program, double time)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         ScheduledProgram pc;
         pc.channel = channel;
@@ -179,7 +184,8 @@ public:
     /**
      * Schedule a MIDI control change (pan, volume, expression, ...).
      */
-    void schedule_control(int channel, int control, int value, double time) {
+    void schedule_control(int channel, int control, int value, double time)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         ScheduledControl cc;
         cc.channel = channel;
@@ -193,8 +199,9 @@ public:
     /**
      * Schedule a note.
      */
-    void schedule_note(int channel, int key, float velocity,
-                       double start_time, double duration) {
+    void schedule_note(int channel, int key, float velocity, double start_time,
+                       double duration)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         ScheduledNote note;
         note.channel = channel;
@@ -210,7 +217,8 @@ public:
     /**
      * Clear all scheduled events.
      */
-    void clear_schedule() {
+    void clear_schedule()
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         scheduled_notes_.clear();
         scheduled_programs_.clear();
@@ -221,8 +229,10 @@ public:
     /**
      * Get the total duration of scheduled notes.
      */
-    double duration() const {
-        if (scheduled_notes_.empty()) return 0.0;
+    double duration() const
+    {
+        if (scheduled_notes_.empty())
+            return 0.0;
         double max_end = 0.0;
         for (const auto& note : scheduled_notes_) {
             max_end = std::max(max_end, note.end_time);
@@ -233,19 +243,23 @@ public:
     /**
      * Start playback.
      */
-    bool play() {
-        if (!tsf_) return false;
-        if (playing_) return true;
+    bool play()
+    {
+        if (!tsf_)
+            return false;
+        if (playing_)
+            return true;
 
         // Initialize audio device if needed
         if (!device_initialized_) {
-            ma_device_config config = ma_device_config_init(ma_device_type_playback);
+            ma_device_config config = ma_device_config_init(
+                ma_device_type_playback);
             config.playback.format = ma_format_f32;
             config.playback.channels = 2;
             config.sampleRate = SAMPLE_RATE;
             config.dataCallback = audio_callback;
             config.pUserData = this;
-            config.periodSizeInFrames = 512;  // Low latency
+            config.periodSizeInFrames = 512; // Low latency
 
             if (ma_device_init(nullptr, &config, &device_) != MA_SUCCESS) {
                 return false;
@@ -272,7 +286,8 @@ public:
     /**
      * Stop playback.
      */
-    void stop() {
+    void stop()
+    {
         if (playing_ && device_initialized_) {
             ma_device_stop(&device_);
         }
@@ -287,14 +302,13 @@ public:
     /**
      * Check if currently playing.
      */
-    bool is_playing() const {
-        return playing_;
-    }
+    bool is_playing() const { return playing_; }
 
     /**
      * Get current playback time.
      */
-    double current_time() const {
+    double current_time() const
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         return current_time_;
     }
@@ -302,16 +316,15 @@ public:
     /**
      * The rate the synthesizer renders at, in samples per second.
      */
-    int sample_rate() const {
-        return SAMPLE_RATE;
-    }
+    int sample_rate() const { return SAMPLE_RATE; }
 
     /**
      * Loudest sample of the last render, before clamping.
      *
      * Above 1.0 means the render clipped and wants a lower gain.
      */
-    float last_render_peak() const {
+    float last_render_peak() const
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         return last_peak_;
     }
@@ -328,7 +341,8 @@ public:
      *                     release tails and reverb. Negative values are
      *                     treated as zero.
      */
-    nb::bytes render_pcm16(double tail_seconds) {
+    nb::bytes render_pcm16(double tail_seconds)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (!tsf_) {
@@ -342,8 +356,8 @@ public:
         last_peak_ = 0.0f;
 
         const double total = duration() + std::max(0.0, tail_seconds);
-        const size_t total_frames =
-            static_cast<size_t>(total * static_cast<double>(SAMPLE_RATE) + 0.5);
+        const size_t total_frames = static_cast<size_t>(
+            total * static_cast<double>(SAMPLE_RATE) + 0.5);
 
         std::vector<float> block(static_cast<size_t>(RENDER_BLOCK_FRAMES) * 2);
         std::vector<int16_t> pcm;
@@ -373,7 +387,8 @@ public:
 
 private:
     static void audio_callback(ma_device* device, void* output,
-                               const void* /* input */, ma_uint32 frame_count) {
+                               const void* /* input */, ma_uint32 frame_count)
+    {
         auto* player = static_cast<TsfPlayer*>(device->pUserData);
         player->render_audio(static_cast<float*>(output), frame_count);
     }
@@ -386,8 +401,10 @@ private:
      * documents, where 1.0 is unity. It divides by the factor, so zero is
      * handled as an explicit mute rather than passed on.
      */
-    void apply_gain() {
-        if (!tsf_) return;
+    void apply_gain()
+    {
+        if (!tsf_)
+            return;
         if (global_gain_ <= 0.0f) {
             tsf_set_output(tsf_, TSF_STEREO_INTERLEAVED, SAMPLE_RATE, MUTE_DB);
             return;
@@ -399,7 +416,8 @@ private:
     /**
      * Return the schedule to the start. Caller holds the mutex.
      */
-    void rewind() {
+    void rewind()
+    {
         current_time_ = 0.0;
         for (auto& note : scheduled_notes_) {
             note.started = false;
@@ -411,14 +429,16 @@ private:
         for (auto& cc : scheduled_controls_) {
             cc.applied = false;
         }
-        if (!tsf_) return;
+        if (!tsf_)
+            return;
         tsf_reset(tsf_);
         // General MIDI reserves channel 10 (9 zero-indexed) for percussion,
         // where note numbers select drums from bank 128.
         tsf_channel_set_bank_preset(tsf_, DRUM_CHANNEL, 128, 0);
     }
 
-    void render_audio(float* output, ma_uint32 frame_count) {
+    void render_audio(float* output, ma_uint32 frame_count)
+    {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (!tsf_ || !playing_) {
@@ -438,8 +458,7 @@ private:
             // All notes done + tail time elapsed
             bool all_stopped = std::all_of(
                 scheduled_notes_.begin(), scheduled_notes_.end(),
-                [](const ScheduledNote& n) { return n.stopped; }
-            );
+                [](const ScheduledNote& n) { return n.stopped; });
             if (all_stopped) {
                 playing_ = false;
             }
@@ -453,7 +472,8 @@ private:
      * and offline rendering so that a rendered file and the sound coming out
      * of the speakers cannot drift apart. Caller holds the mutex.
      */
-    void render_frames(float* output, ma_uint32 frame_count) {
+    void render_frames(float* output, ma_uint32 frame_count)
+    {
         const double time_per_sample = 1.0 / static_cast<double>(SAMPLE_RATE);
 
         for (ma_uint32 i = 0; i < frame_count; ++i) {
@@ -461,7 +481,8 @@ private:
             for (auto& pc : scheduled_programs_) {
                 if (!pc.applied && current_time_ >= pc.time) {
                     if (pc.channel != DRUM_CHANNEL) {
-                        tsf_channel_set_presetindex(tsf_, pc.channel, pc.program);
+                        tsf_channel_set_presetindex(tsf_, pc.channel,
+                                                    pc.program);
                     }
                     pc.applied = true;
                 }
@@ -470,7 +491,8 @@ private:
             // Apply control changes
             for (auto& cc : scheduled_controls_) {
                 if (!cc.applied && current_time_ >= cc.time) {
-                    tsf_channel_midi_control(tsf_, cc.channel, cc.control, cc.value);
+                    tsf_channel_midi_control(tsf_, cc.channel, cc.control,
+                                             cc.value);
                     cc.applied = true;
                 }
             }
@@ -478,10 +500,12 @@ private:
             // Process note events
             for (auto& note : scheduled_notes_) {
                 if (!note.started && current_time_ >= note.start_time) {
-                    tsf_channel_note_on(tsf_, note.channel, note.key, note.velocity);
+                    tsf_channel_note_on(tsf_, note.channel, note.key,
+                                        note.velocity);
                     note.started = true;
                 }
-                if (!note.stopped && note.started && current_time_ >= note.end_time) {
+                if (!note.stopped && note.started
+                    && current_time_ >= note.end_time) {
                     tsf_channel_note_off(tsf_, note.channel, note.key);
                     note.stopped = true;
                 }
@@ -508,33 +532,30 @@ private:
 };
 
 
-NB_MODULE(_tsf, m) {
+NB_MODULE(_tsf, m)
+{
     m.doc() = "TinySoundFont audio synthesis backend for aldakit";
 
-    nb::class_<TsfPlayer>(m, "TsfPlayer",
-        "SoundFont synthesizer with scheduled MIDI playback.")
+    nb::class_<TsfPlayer>(
+        m, "TsfPlayer", "SoundFont synthesizer with scheduled MIDI playback.")
         .def(nb::init<>())
-        .def("load_soundfont", &TsfPlayer::load_soundfont,
-             "path"_a,
+        .def("load_soundfont", &TsfPlayer::load_soundfont, "path"_a,
              "Load a SoundFont file (.sf2). Returns True on success.")
         .def("is_loaded", &TsfPlayer::is_loaded,
              "Check if a SoundFont is loaded.")
         .def("preset_count", &TsfPlayer::preset_count,
              "Get the number of presets in the loaded SoundFont.")
-        .def("preset_name", &TsfPlayer::preset_name,
-             "index"_a,
+        .def("preset_name", &TsfPlayer::preset_name, "index"_a,
              "Get the name of a preset by index.")
-        .def("set_gain", &TsfPlayer::set_gain,
-             "gain"_a,
+        .def("set_gain", &TsfPlayer::set_gain, "gain"_a,
              "Set global gain (0.0 - 2.0, default 1.0).")
-        .def("schedule_program", &TsfPlayer::schedule_program,
-             "channel"_a, "program"_a, "time"_a,
-             "Schedule a program change.")
-        .def("schedule_control", &TsfPlayer::schedule_control,
-             "channel"_a, "control"_a, "value"_a, "time"_a,
+        .def("schedule_program", &TsfPlayer::schedule_program, "channel"_a,
+             "program"_a, "time"_a, "Schedule a program change.")
+        .def("schedule_control", &TsfPlayer::schedule_control, "channel"_a,
+             "control"_a, "value"_a, "time"_a,
              "Schedule a MIDI control change (e.g. control 10 for pan)")
-        .def("schedule_note", &TsfPlayer::schedule_note,
-             "channel"_a, "key"_a, "velocity"_a, "start_time"_a, "duration"_a,
+        .def("schedule_note", &TsfPlayer::schedule_note, "channel"_a, "key"_a,
+             "velocity"_a, "start_time"_a, "duration"_a,
              "Schedule a note (velocity 0.0-1.0, times in seconds).")
         .def("clear_schedule", &TsfPlayer::clear_schedule,
              "Clear all scheduled events.")
@@ -542,8 +563,7 @@ NB_MODULE(_tsf, m) {
              "Get total duration of scheduled notes in seconds.")
         .def("play", &TsfPlayer::play,
              "Start playback. Returns True on success.")
-        .def("stop", &TsfPlayer::stop,
-             "Stop playback.")
+        .def("stop", &TsfPlayer::stop, "Stop playback.")
         .def("is_playing", &TsfPlayer::is_playing,
              "Check if currently playing.")
         .def("sample_rate", &TsfPlayer::sample_rate,
