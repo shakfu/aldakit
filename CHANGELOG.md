@@ -40,6 +40,8 @@ Scores can now be rendered to audio files, and a part no longer holds a MIDI cha
 
 - **The generator hands out placeholder channels** (`VIRTUAL_CHANNEL_BASE` and up, allocated without limit) while it walks the AST, because whether reuse is needed cannot be known until the last part has been declared. `PartState.channel` holds a real channel again once `generate()` returns, or -1 for a part that never sounds; `PartState.allocated_channel` keeps the placeholder so the linter can attribute a shared channel back to the parts sharing it.
 
+- **Finding severities are an enum**, `aldakit.Severity`, rather than three module-level strings. The comment above those strings said they were "ordered by how much they should worry the reader", but the order was not in them: it was repeated in a dict inside `lint_score`, and again in the test that checked the ordering. `Severity.rank` reads it back from the order the members are declared in, so it is stated once. The members subclass `str` and keep the old names as aliases, so `finding.severity == "error"` and `from aldakit.analysis import ERROR` both still work. `Severity.__str__` is defined explicitly because `Enum.__format__` changed in 3.11, and without it `aldakit lint` would print "error" on 3.10 and "Severity.ERROR" from 3.11 on.
+
 - **`MELODIC_CHANNELS` moved to `aldakit/midi/channels.py`** and is re-exported from `midi/generator.py`, so existing imports are unaffected.
 
 ### Changed - build and CI

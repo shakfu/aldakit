@@ -16,8 +16,10 @@ from aldakit.analysis import (
     INFO,
     WARNING,
     Finding,
+    Severity,
     inspect_score,
     lint_score,
+    severity_rank,
 )
 
 
@@ -164,11 +166,52 @@ class TestLintStaticChecks:
         assert lint_score("piano: (tempo 120) c d e f g") == []
 
 
+class TestSeverity:
+    """The severity levels, which are an enum but still behave as strings."""
+
+    def test_reads_as_the_bare_word(self):
+        """Enum.__format__ changed in 3.11; the linter's output must not."""
+        assert str(Severity.ERROR) == "error"
+        assert f"{Severity.WARNING}" == "warning"
+
+    def test_compares_equal_to_the_string_it_replaced(self):
+        assert Severity.ERROR == "error"
+        assert ERROR == "error"
+        assert Severity.INFO != "error"
+
+    def test_a_finding_prints_its_severity_as_a_word(self):
+        assert str(Finding("demo", "Something is off.", ERROR)) == (
+            "error: Something is off. [demo]"
+        )
+
+    def test_rank_follows_the_order_the_members_are_declared_in(self):
+        assert [s.rank for s in Severity] == [0, 1, 2]
+        assert Severity.ERROR.rank < Severity.WARNING.rank < Severity.INFO.rank
+
+    def test_rank_accepts_the_plain_strings_too(self):
+        assert severity_rank("error") == Severity.ERROR.rank
+        assert severity_rank(WARNING) == Severity.WARNING.rank
+
+    def test_an_unknown_severity_sorts_last_rather_than_raising(self):
+        """A finding with an odd severity is still worth reporting."""
+        assert severity_rank("catastrophe") > Severity.INFO.rank
+
+    def test_findings_with_an_unknown_severity_still_sort(self):
+        """lint_score sorts by severity_rank, which must not raise on one."""
+        odd = Finding("odd", "Unknown severity.", "catastrophe")
+        error = Finding("bad", "An error.", ERROR)
+        info = Finding("note", "For information.", INFO)
+        ordered = sorted([odd, info, error], key=lambda f: severity_rank(f.severity))
+        assert ordered == [error, info, odd]
+
+
 class TestOrdering:
     def test_errors_come_first(self):
         findings = lint_score("unused = c\nbogus: nosuchvar")
         severities = [f.severity for f in findings]
-        assert severities == sorted(severities, key=[ERROR, WARNING, INFO].index)
+        # The order comes from Severity itself rather than being restated
+        # here, so this test cannot disagree with the code about it.
+        assert severities == sorted(severities, key=severity_rank)
 
     def test_same_severity_orders_by_position(self):
         findings = lint_score("piano: (frob 1) c\nbogus: d")
