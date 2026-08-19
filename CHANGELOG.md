@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0]
+
 Scores can now be rendered to audio files, and a part no longer holds a MIDI channel for the length of a score: it gives the channel up once it has stopped sounding, so a score can have more parts than MIDI has channels. That is what `examples/all-instruments.alda` (128 instruments) and `examples/midi-channel-management.alda` (31 parts) were written to demonstrate, and both were reported as broken by `aldakit lint` until now. Underneath it, a timing bug that desynchronised parts in a group. **Three of the 40 examples generate different MIDI**: two only in which channel each part lands on, and `multi-poly.alda` in how it sounds. No score lost a note. The diff is in `tests/golden/examples.json`.
 
 ### Added

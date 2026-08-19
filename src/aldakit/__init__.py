@@ -52,7 +52,7 @@ from .score import PlaybackHandle, Score
 from .serialize import AldaWriter, write_alda
 from .tokens import SourcePosition, Token, TokenType
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 
 __all__ = [
