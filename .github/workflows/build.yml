@@ -21,6 +21,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    # These take one to five minutes. Anything close to this limit means
+    # something outside the workflow has stopped responding.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +50,16 @@ jobs:
 
       - name: Install ALSA headers (libremidi)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+              exit 0
+            fi
+            echo "apt failed (attempt $attempt); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::Could not install libasound2-dev after 3 tries"
+          exit 1
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
@@ -68,6 +80,8 @@ jobs:
   audio:
     name: Golden audio on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Rendering the examples takes about a minute; the rest is setup.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -83,7 +97,16 @@ jobs:
 
       - name: Install ALSA headers (libremidi)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+              exit 0
+            fi
+            echo "apt failed (attempt $attempt); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::Could not install libasound2-dev after 3 tries"
+          exit 1
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
@@ -129,6 +152,9 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     needs: [test]
     runs-on: ${{ matrix.os }}
+    # The Linux job builds aarch64 under emulation and takes over half an
+    # hour on its own, so this is generous by comparison with the others.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
