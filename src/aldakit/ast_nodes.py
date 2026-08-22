@@ -175,6 +175,11 @@ class DurationNode(ASTNode):
 
     components: list["DurationComponentNode"] = field(default_factory=list)
     position: SourcePosition | None = None
+    #: How many barlines stood before each component, by component index. A
+    #: tie may cross a barline ("a-8~|2." is one note), and barlines have no
+    #: effect on timing, so they are recorded here rather than emitted as
+    #: events: this is what lets the writer put them back.
+    barlines_before: dict[int, int] = field(default_factory=dict)
 
     def _repr_helper(self, indent: int) -> str:
         if len(self.components) == 1:

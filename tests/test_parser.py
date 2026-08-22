@@ -587,3 +587,122 @@ class TestComplexExpressions:
         assert isinstance(bracketed, BracketedSequenceNode)
         # First event should be on-repetition
         assert isinstance(bracketed.events.events[0], OnRepetitionsNode)
+
+
+class TestTiesAcrossBarlines:
+    """A tie may cross a barline.
+
+    docs/reference.md: "Barlines are purely visual and have no effect on
+    timing." Before this was fixed the parser ended the tie chain at the
+    barline and then silently discarded the duration that followed, so
+    "a-8~|2." sounded as a lone eighth note -- 16% of its written length --
+    and four of the examples were quietly wrong.
+    """
+
+    @pytest.mark.parametrize(
+        "barred,plain",
+        [
+            # the tie before the barline
+            ("piano: a-8~|2.", "piano: a-8~2."),
+            ("piano: c4~|1", "piano: c4~1"),
+            # the tie after the barline
+            ("piano: c4 | ~2", "piano: c4~2"),
+            # a tie on both sides, across a line break, as jimenez writes it
+            ("piano: d4.~4~|\n\n  |~4.~8", "piano: d4.~4~4.~8"),
+            # several components, several barlines
+            ("piano: c1~|1~|1", "piano: c1~1~1"),
+        ],
+    )
+    def test_barline_does_not_change_timing(self, barred, plain):
+        from aldakit import Score
+
+        assert Score(barred).duration == Score(plain).duration
+
+    @pytest.mark.parametrize(
+        "source,expected",
+        [
+            ("piano: a-8~|2.", 2),
+            ("piano: c4 | ~2", 2),
+            ("piano: c1~|1~|1", 3),
+        ],
+    )
+    def test_tie_chain_spans_the_barline(self, source, expected):
+        note = parse(source).children[0].events.events[0]
+        assert isinstance(note, NoteNode), f"expected a note, got {note!r}"
+        assert len(note.duration.components) == expected, (
+            f"{source!r} should tie {expected} duration components"
+        )
+
+    def test_barlines_are_recorded_for_the_writer(self):
+        note = parse("piano: c1~|1").children[0].events.events[0]
+        assert note.duration.barlines_before == {1: 1}, (
+            "the barline a tie crossed must be recorded so it can be written back"
+        )
+
+    def test_a_trailing_tie_is_still_a_slur(self):
+        """No duration follows, so the tie slurs rather than extending."""
+        for source in ("piano: c4~ d", "piano: c4~ | d"):
+            note = parse(source).children[0].events.events[0]
+            assert note.slurred, f"{source!r} should slur the first note"
+            assert len(note.duration.components) == 1, (
+                f"{source!r} must not absorb the following note into the tie"
+            )
+
+    def test_a_barline_without_a_tie_is_still_an_event(self):
+        """Only tie chains step over barlines; ordinary ones stay in the AST."""
+        events = parse("piano: c4 | d4").children[0].events.events
+        assert any(isinstance(e, BarlineNode) for e in events), (
+            "a barline outside a tie chain must remain a barline event"
+        )
+
+
+class TestUnconsumableTokens:
+    """A token the parser cannot place is an error, not something to drop.
+
+    The parser used to advance past anything it could not consume and return
+    no event, so "piano: c d ]" parsed clean and "aldakit lint" reported no
+    problems. That silence is how a tie crossing a barline lost its duration
+    in four of the examples without anyone seeing an error.
+    """
+
+    @pytest.mark.parametrize(
+        "source,expected_hint",
+        [
+            ("piano: c d ]", "no '[' for this ']'"),
+            ("piano: c d }", "no '{' for this '}'"),
+            ("piano: =", "variable definition needs a name"),
+            ("piano: *4", "repeat follows the event"),
+            ("piano: c ~ 4", "duration has to follow a note"),
+            ("piano: .", "dot lengthens the duration"),
+            ("piano: 4", "duration has to follow a note"),
+        ],
+    )
+    def test_unconsumable_token_raises_with_a_hint(self, source, expected_hint):
+        with pytest.raises(AldaSyntaxError) as excinfo:
+            parse(source)
+        error = excinfo.value
+        assert expected_hint in (error.hint or ""), (
+            f"{source!r} should explain what the token belongs to, got {error.hint!r}"
+        )
+
+    def test_the_error_points_at_the_offending_token(self):
+        with pytest.raises(AldaSyntaxError) as excinfo:
+            parse("piano: c d ]")
+        assert excinfo.value.position.column == 12, (
+            "the error should point at the ']', not the end of the line"
+        )
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "piano: c d e",
+            "piano: c4~|2.",
+            "piano: [c d]*4",
+            "piano: {c d e}2",
+            "piano: c/e/g",
+            "piano: V1: c V2: d",
+            "piano: (tempo 120) c",
+        ],
+    )
+    def test_valid_music_still_parses(self, source):
+        parse(source)

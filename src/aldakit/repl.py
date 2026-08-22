@@ -4,7 +4,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol, cast
 
 # Initialize vendored packages path (must be before prompt_toolkit imports)
 from . import ext  # noqa: F401
@@ -382,6 +382,43 @@ def list_directory(directory: Path) -> tuple[list[str], list[str]]:
     return directories, files
 
 
+class ReplBackend(Protocol):
+    """What every REPL command can assume about the playback backend.
+
+    Structural rather than nominal: command handling is exercised with a
+    stand-in that implements this and nothing else, which is the reason
+    ``ReplContext`` was extracted in the first place.
+    """
+
+    def stop(self) -> None: ...
+
+    def is_playing(self) -> bool: ...
+
+
+class ConcurrentBackend(ReplBackend, Protocol):
+    """The extra surface a MIDI backend has and the audio backend does not.
+
+    ``ReplContext.supports_concurrent`` records which of the two is in hand.
+    It is a runtime flag, so a type checker cannot follow it to a type; the
+    commands that need this interface go through ``_concurrent`` below.
+    """
+
+    def close(self) -> None: ...
+
+    def list_output_ports(self) -> list[str]: ...
+
+    #: Read and written by the :concurrent and :sequential commands.
+    concurrent_mode: bool
+
+    @property
+    def active_slots(self) -> int: ...
+
+
+def _concurrent(backend: ReplBackend) -> ConcurrentBackend:
+    """Read a backend as a concurrent one, at a site that has checked."""
+    return cast(ConcurrentBackend, backend)
+
+
 @dataclass
 class ReplContext:
     """Mutable state a REPL command may read or change.
@@ -391,7 +428,7 @@ class ReplContext:
     untestable.
     """
 
-    backend: object
+    backend: ReplBackend
     session: ReplSession
     play: Callable[..., bool]
     supports_concurrent: bool = True
@@ -534,7 +571,7 @@ def _cmd_ports(ctx: ReplContext, arg: str) -> None:
     if not ctx.supports_concurrent:
         print("  (using TinySoundFont audio backend)")
         return
-    ports = ctx.backend.list_output_ports()
+    ports = _concurrent(ctx.backend).list_output_ports()
     if ports:
         for i, name in enumerate(ports):
             print(f"  {i}: {name}")
@@ -562,11 +599,11 @@ def _cmd_tempo(ctx: ReplContext, arg: str) -> None:
 def _cmd_status(ctx: ReplContext, arg: str) -> None:
     playing = "playing" if ctx.backend.is_playing() else "idle"
     if ctx.supports_concurrent:
-        mode = "concurrent" if ctx.backend.concurrent_mode else "sequential"
+        mode = "concurrent" if _concurrent(ctx.backend).concurrent_mode else "sequential"
         print("Backend: MIDI (libremidi)")
         print(f"Mode: {mode}")
         print(f"Status: {playing}")
-        print(f"Active slots: {ctx.backend.active_slots}/{MAX_PLAYBACK_SLOTS}")
+        print(f"Active slots: {_concurrent(ctx.backend).active_slots}/{MAX_PLAYBACK_SLOTS}")
     else:
         print("Backend: Audio (TinySoundFont)")
         print(f"Status: {playing}")
@@ -577,7 +614,7 @@ def _cmd_status(ctx: ReplContext, arg: str) -> None:
 
 def _cmd_concurrent(ctx: ReplContext, arg: str) -> None:
     if ctx.supports_concurrent:
-        ctx.backend.concurrent_mode = True
+        _concurrent(ctx.backend).concurrent_mode = True
         print("Concurrent mode enabled - inputs will layer on each other")
     else:
         print("Concurrent mode not available with audio backend")
@@ -585,7 +622,7 @@ def _cmd_concurrent(ctx: ReplContext, arg: str) -> None:
 
 def _cmd_sequential(ctx: ReplContext, arg: str) -> None:
     if ctx.supports_concurrent:
-        ctx.backend.concurrent_mode = False
+        _concurrent(ctx.backend).concurrent_mode = False
         print("Sequential mode enabled - each input waits for previous")
     else:
         print("Audio backend always uses sequential mode")
@@ -840,7 +877,7 @@ def run_repl(
 
     # Clean up backend
     if supports_concurrent:
-        backend.close()
+        _concurrent(backend).close()
     else:
         backend.stop()
     print("Goodbye!")

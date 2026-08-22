@@ -227,7 +227,9 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [collect_artifacts]
+    # The golden audio comparison gates shipping, not building: wheels stay
+    # useful as artifacts when it is red, but nothing reaches PyPI without it.
+    needs: [collect_artifacts, audio]
     runs-on: ubuntu-latest
     if: inputs.publish
     environment:
@@ -247,7 +249,7 @@ jobs:
 
   prerelease:
     name: Create GitHub prerelease
-    needs: [collect_artifacts]
+    needs: [collect_artifacts, audio]
     runs-on: ubuntu-latest
     if: inputs.prerelease
     permissions:

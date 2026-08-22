@@ -40,6 +40,47 @@ from .errors import AldaSyntaxError
 from .scanner import Scanner
 from .tokens import SourcePosition, Token, TokenType
 
+#: What to say when a token turns up where no event can start. Keyed on the
+#: token that was found, because the useful hint is almost always about what
+#: it was probably meant to attach to.
+_UNEXPECTED_HINTS = {
+    TokenType.EVENT_SEQ_CLOSE: "There is no '[' for this ']' to close.",
+    TokenType.CRAM_CLOSE: "There is no '{' for this '}' to close.",
+    TokenType.RIGHT_PAREN: "There is no '(' for this ')' to close.",
+    TokenType.NOTE_LENGTH: "A duration has to follow a note or rest, as in "
+    "'c4'. A tie carries one across a barline: 'c4~|2'.",
+    TokenType.NOTE_LENGTH_MS: "A duration has to follow a note or rest, as in "
+    "'c500ms'.",
+    TokenType.NOTE_LENGTH_SECONDS: "A duration has to follow a note or rest, "
+    "as in 'c2s'.",
+    TokenType.DOT: "A dot lengthens the duration it follows, as in 'c4.'.",
+    TokenType.TIE: "A tie joins a note to a duration, as in 'c4~4'. On its "
+    "own after a note it slurs into the next one.",
+    TokenType.REPEAT: "A repeat follows the event it repeats, as in 'c*4' or "
+    "'[c d]*4'.",
+    TokenType.REPETITIONS: "Alternate endings follow the event they belong "
+    "to, as in \"[c'1 d'2]*2\".",
+    TokenType.SHARP: "An accidental follows its note letter, as in 'c+'.",
+    TokenType.FLAT: "An accidental follows its note letter, as in 'c-'.",
+    TokenType.NATURAL: "An accidental follows its note letter, as in 'c_'.",
+    TokenType.EQUALS: "A variable definition needs a name before the '=', as "
+    "in 'motif = c d e'.",
+    TokenType.ALIAS: "A quoted name is an alias on a part declaration, as in "
+    "'violin \"lead\":'.",
+    TokenType.SEPARATOR: "'/' separates the notes of a chord, as in 'c/e/g', "
+    "or the instruments of a part, as in 'violin/viola:'.",
+    TokenType.COLON: "A ':' ends a part declaration and needs an instrument "
+    "name before it.",
+}
+
+
+def _describe(token: Token) -> str:
+    """Name a token the way the source spelled it, for an error message."""
+    text = getattr(token, "lexeme", None)
+    if text:
+        return repr(text)
+    return token.type.name.replace("_", " ").lower()
+
 
 class Parser:
     """Parses Alda tokens into an AST."""
@@ -258,10 +299,19 @@ class Parser:
         if self._check(TokenType.NOTE_LETTER):
             return self._parse_note_or_chord()
 
-        # Unexpected token - skip it
+        # A token nothing above can consume. Skipping it silently is how a
+        # tie that crossed a barline lost its duration for four examples
+        # without any error: the discarded token was the music. Anything the
+        # parser cannot place is a syntax error.
         if not self._is_at_end():
-            self._advance()
-            return None
+            self._error(
+                f"Unexpected {_describe(self._peek())} here",
+                hint=_UNEXPECTED_HINTS.get(
+                    self._peek().type,
+                    "This is not something that can start an event. Check for "
+                    "a stray character or an unbalanced bracket.",
+                ),
+            )
 
         return None
 
@@ -508,24 +558,60 @@ class Parser:
             return None
 
         components = []
+        barlines_before: dict[int, int] = {}
         position = self._peek().position
 
         while self._is_duration_start():
             component = self._parse_duration_component()
             components.append(component)
 
-            # Check for tie connecting to another duration component
-            if self._check(TokenType.TIE) and self._is_duration_start_at(
-                self._current + 1
-            ):
-                self._advance()  # consume tie
-            else:
+            # Check for tie connecting to another duration component. A tie
+            # may cross barlines and line breaks -- "a-8~|2." is one note, and
+            # "d4.~4~|" continued by "|~4.~8" on the next line is one note --
+            # so the barlines are stepped over rather than ending the chain.
+            link = self._scan_tie_link()
+            if link is None:
                 break
+            next_pos, barlines = link
+            self._current = next_pos
+            if barlines:
+                barlines_before[len(components)] = barlines
 
         if not components:
             return None
 
-        return DurationNode(components=components, position=position)
+        return DurationNode(
+            components=components,
+            position=position,
+            barlines_before=barlines_before,
+        )
+
+    def _scan_tie_link(self) -> tuple[int, int] | None:
+        """Look for a tie joining the current position to another duration.
+
+        Barlines and newlines carry no timing, so a tie chain steps over them;
+        a tie may be written on either side of a barline, or on both. Returns
+        the position of the next duration component and the number of barlines
+        crossed, or None if this is not a tie link -- in which case nothing is
+        consumed, leaving a trailing tie to be read as a slur.
+        """
+        pos = self._current
+        barlines = 0
+        saw_tie = False
+
+        while pos < len(self.tokens):
+            token_type = self.tokens[pos].type
+            if token_type == TokenType.TIE:
+                saw_tie = True
+            elif token_type == TokenType.BARLINE:
+                barlines += 1
+            elif token_type != TokenType.NEWLINE:
+                break
+            pos += 1
+
+        if not saw_tie or not self._is_duration_start_at(pos):
+            return None
+        return pos, barlines
 
     def _is_duration_start(self) -> bool:
         """Check if current token starts a duration."""

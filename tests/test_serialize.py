@@ -223,3 +223,26 @@ class TestScoreIntegration:
         from aldakit.score import _ast_to_alda
 
         assert _ast_to_alda(parse("piano: c")) == write_alda(parse("piano: c"))
+
+
+class TestTiesAcrossBarlines:
+    """A tie that crossed a barline must survive being written back out."""
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "piano: a-8~|2.",
+            "piano: c4~|1",
+            "piano: c4 | ~2",
+            "piano: c1~|1~|1",
+            "piano: d4.~4~|\n\n  |~4.~8",
+        ],
+    )
+    def test_round_trips(self, source):
+        assert_round_trips(source)
+
+    def test_the_barline_is_written_back(self):
+        written = write_alda(parse("piano: c4 | ~2"))
+        assert "~|" in written, (
+            f"the barline the tie crossed was dropped: {written!r}"
+        )

@@ -101,6 +101,17 @@ c2~8               # Half tied to eighth
 c1~2~4             # Multiple ties
 ```
 
+A tie may cross a barline, which is how a note held across a bar is written.
+The tie can go before the bar, after it, or on both sides; all three mean the
+same thing, and all three mean the same as writing the tie with no bar at all:
+
+```alda
+c4~|2              # Tie before the barline
+c4 | ~2            # Tie after it
+c4~|~2             # On both sides
+c4~2               # The same note, no barline
+```
+
 ### Slurred Notes
 
 Connect different notes with `~` for legato:
@@ -479,6 +490,9 @@ Barlines are purely visual and have no effect on timing:
 ```alda
 c4 d e f | g a b c | d1
 ```
+
+Because they carry no timing, a barline does not interrupt a tie: see
+[Tied Notes](#tied-notes).
 
 ---
 

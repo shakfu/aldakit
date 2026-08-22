@@ -13,7 +13,6 @@ dev = [
     { name = "mkdocs-material" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "pytest-review" },
     { name = "ruff" },
     { name = "twine" },
     { name = "ty" },
@@ -27,7 +26,6 @@ dev = [
     { name = "mkdocs-material", specifier = ">=9.7.6" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-review", specifier = ">=0.1.1" },
     { name = "ruff", specifier = ">=0.14.10" },
     { name = "twine", specifier = ">=6.2.0" },
     { name = "ty", specifier = ">=0.0.8" },
@@ -863,18 +861,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328, upload-time = "2025-09-09T10:57:02.113Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424, upload-time = "2025-09-09T10:57:00.695Z" },
-]
-
-[[package]]
-name = "pytest-review"
-version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/10/ff/4f34a72bed587a57db6cce04ad67c858a15df22caeee38ee9f30060650c5/pytest_review-0.1.1.tar.gz", hash = "sha256:ca142bc86ff2691da3eadd9fdee4a9a478d5e4b932140ecfca5ca728f1c3093b", size = 113057, upload-time = "2025-12-19T09:33:05.748Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a1/5d/a0ddc586f3401293776a3dd2b5ff43e268bcc301ae0333be6053497a37f1/pytest_review-0.1.1-py3-none-any.whl", hash = "sha256:c688da9ac6e581324cc4f0f8bb10273264364ec2f174fa67330951025dc57b54", size = 36552, upload-time = "2025-12-19T09:33:04.064Z" },
 ]
 
 [[package]]

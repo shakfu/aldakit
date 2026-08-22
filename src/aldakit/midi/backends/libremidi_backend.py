@@ -51,7 +51,7 @@ class LibremidiBackend(MidiBackend):
             virtual_port_name: Name for the virtual MIDI port when no physical
                 ports are available. Defaults to DEFAULT_VIRTUAL_PORT_NAME.
         """
-        from ... import _libremidi
+        from ... import _libremidi  # type: ignore[attr-defined]
 
         self._libremidi = _libremidi
         self._port_name = port_name

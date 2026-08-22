@@ -183,7 +183,14 @@ class AldaWriter(ASTVisitor):
 
     def visit_DurationNode(self, node: DurationNode) -> str:
         # Multiple components are tied together: "1~1" is a double whole note.
-        return "~".join(self._render(c) for c in node.components)
+        # A tie that crossed a barline is written back as "~|", the one form
+        # the parser reads identically however the source spelled it.
+        parts = []
+        for index, component in enumerate(node.components):
+            if index:
+                parts.append("~" + "|" * node.barlines_before.get(index, 0))
+            parts.append(self._render(component))
+        return "".join(parts)
 
     def visit_NoteLengthNode(self, node: NoteLengthNode) -> str:
         return _format_number(node.denominator) + "." * node.dots

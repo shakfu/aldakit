@@ -2,13 +2,9 @@
 nanobind_add_module(_libremidi aldakit/_libremidi.cpp)
 target_link_libraries(_libremidi PUBLIC libremidi)
 
-set_target_properties(_libremidi PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-    ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-)
-
-# Install directive for scikit-build-core
+# What goes in the wheel. The build tree is where the artifacts live; they
+# used to also be written into src/aldakit, which left one Python version's
+# extension sitting in the source directory while another was being built.
 install(TARGETS _libremidi LIBRARY DESTINATION aldakit)
 
 # _tsf nanobind extension module (TinySoundFont + miniaudio)
@@ -31,11 +27,5 @@ elseif(UNIX AND NOT APPLE)
 elseif(WIN32)
     # Windows: no extra libs needed, miniaudio uses COM
 endif()
-
-set_target_properties(_tsf PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-    ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/src/aldakit"
-)
 
 install(TARGETS _tsf LIBRARY DESTINATION aldakit)

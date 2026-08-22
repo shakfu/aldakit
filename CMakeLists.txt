@@ -37,20 +37,6 @@ if (APPLE)
     endif()
 endif()
 
-if(CMAKE_HOST_APPLE) # i.e if is_macos and have_homebrew then get homebrew_prefix
-    execute_process(
-        COMMAND brew --prefix
-        OUTPUT_VARIABLE homebrew_prefix
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(DEFINED homebrew_prefix AND CM_MACOS_HOMEBREW)
-        set(local_prefix ${homebrew_prefix})
-    else()
-        set(local_prefix ${CMAKE_SOURCE_DIR}/build/thirdparty/install)
-    endif()
-endif()
-message(STATUS "local_prefix: ${local_prefix}")
-
 find_package(Python 3.8
   REQUIRED COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)

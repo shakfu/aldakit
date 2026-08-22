@@ -4,9 +4,9 @@ d2 $(1) docs/assets/$(basename $(notdir $(1))).$(2)
 endef
 
 
-.PHONY: all sync resync build test clean format lint typecheck check  \
+.PHONY: all sync resync build test clean format lint fix typecheck check  \
 		reset publish publish-test assets qa wheel release \
-		coverage test-review docs docs-serve docs-deploy \
+		coverage docs docs-serve docs-deploy \
 		golden golden-audio soundfont test-audio instruments generated
 
 all: sync
@@ -32,9 +32,6 @@ release:
 
 test:
 	@uv run python -m pytest tests/ -v
-
-test-review:
-	@uv run python -m pytest --review tests/
 
 coverage:
 	@uv run python -m pytest --cov-report term-missing:skip-covered --cov=src/aldakit tests/
@@ -71,13 +68,19 @@ generated: instruments golden
 format:
 	@uv run ruff format src/ tests/
 
+# Read-only, and the same command CI runs. 'make fix' is the one that edits.
 lint:
-	@uv run ruff check --fix src/ tests/
+	@uv run ruff check src/ tests/ scripts/
+
+fix:
+	@uv run ruff check --fix src/ tests/ scripts/
 
 typecheck:
 	@uv run ty check src/aldakit/
 
-qa: lint typecheck format
+# What CI checks, in the order CI checks it. A target named for quality
+# assurance that never ran the tests was the wrong shape.
+qa: lint typecheck test
 
 check:
 	@uv run twine check dist/*
