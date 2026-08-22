@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.1]
+
 A tie held across a barline lost the duration on the far side of the bar. `a-8~|2.` sounded as a bare eighth note, a sixth of its written length, and four of the 40 examples were quietly wrong wherever they hold a note across a bar. The parser was discarding any token it could not place, without an error, so nothing reported it; `aldakit lint` called the affected scores clean. **The golden MIDI and audio fixtures for those four examples change.** They had been regenerated from the parser that had the bug and so had pinned the wrong sound as correct since v0.2.0, which is the one failure mode a golden fixture has: it can only ever agree with the implementation that produced it. `tests/test_invariants.py` is the answer to that -- properties taken from the language reference, true independently of any implementation. No example gains or loses a note. The diff is in `tests/golden/examples.json` and `tests/golden/audio.json`.
 
 ### Added
@@ -52,9 +54,33 @@ Scores can now be rendered to audio files, and a part no longer holds a MIDI cha
 
 - **`aldakit render FILE` writes a score to a WAV file**, synthesized with a SoundFont, with no audio device involved and without waiting for the score to play: `all-instruments.alda` is two and a half minutes long and renders in twelve seconds. `-o` names the output (the input file with a `.wav` suffix by default), `-sf` the SoundFont, `-g` the gain and `--tail` how much is rendered after the last note so that release tails are not cut off. A mix loud enough to clip is reported along with a gain that will not clip. `aldakit.render()`, `aldakit.render_file()` and `Score.render()` are the same thing from Python.
 
-- **Golden audio fixtures.** `tests/golden/audio.json` pins what every example *sounds* like -- loudness per channel over quarter-second windows, the peak, and the length -- next to the golden MIDI fixtures that pin what the generator decided. It closes the gap that every defect in this project's history has fallen through: MIDI that is perfectly well formed and sounds wrong. Deleting the control changes on the way to the synthesizer, for instance, leaves all 203 golden MIDI assertions passing and fails four audio fixtures. Regenerate with `make golden-audio`; CI runs the comparison on Linux and macOS.
+- **Golden audio fixtures.** `tests/golden/audio.json` pins what every example *sounds* like -- loudness per channel over quarter-second windows, the peak, and the length -- next to the golden MIDI fixtures that pin what the generator decided. It closes the gap most defects in this project's history have fallen through: MIDI that is perfectly well formed and sounds wrong. What it cannot catch is a fixture regenerated from a faulty implementation, since a fixture can only ever agree with the code that produced it. Deleting the control changes on the way to the synthesizer, for instance, leaves all 203 golden MIDI assertions passing and fails four audio fixtures. Regenerate with `make golden-audio`; CI runs the comparison on Linux and macOS.
 
 - **`aldakit/midi/render.py`** holds it, on top of a new `render_pcm16()` in the TinySoundFont binding. Offline rendering and real-time playback now run the same synthesis loop -- the audio callback is a caller of it rather than the owner of it -- so a rendered file and the sound coming out of the speakers cannot disagree.
+
+- **`make golden-audio`, `make soundfont` and `make test-audio`.** `make generated` is unchanged and still needs no download.
+
+### Changed
+
+- **The generator hands out placeholder channels** (`VIRTUAL_CHANNEL_BASE` and up, allocated without limit) while it walks the AST, because whether reuse is needed cannot be known until the last part has been declared. `PartState.channel` holds a real channel again once `generate()` returns, or -1 for a part that never sounds; `PartState.allocated_channel` keeps the placeholder so the linter can attribute a shared channel back to the parts sharing it.
+
+- **Finding severities are an enum**, `aldakit.Severity`, rather than three module-level strings. The comment above those strings said they were "ordered by how much they should worry the reader", but the order was not in them: it was repeated in a dict inside `lint_score`, and again in the test that checked the ordering. `Severity.rank` reads it back from the order the members are declared in, so it is stated once. The members subclass `str` and keep the old names as aliases, so `finding.severity == "error"` and `from aldakit.analysis import ERROR` both still work. `Severity.__str__` is defined explicitly because `Enum.__format__` changed in 3.11, and without it `aldakit lint` would print "error" on 3.10 and "Severity.ERROR" from 3.11 on.
+
+- **`MELODIC_CHANNELS` moved to `aldakit/midi/channels.py`** and is re-exported from `midi/generator.py`, so existing imports are unaffected.
+
+- **A `Golden audio` job** renders every example against the pinned fixtures on Linux and macOS. It caches the SoundFont, keyed on the download catalog, so a run does not depend on a third-party site being up, retries the download if the cache misses and the site is unreachable, and sets `ALDAKIT_REQUIRE_AUDIO_FIXTURES`, which turns "no SoundFont, nothing to compare" from a skip into a failure -- a green tick for a comparison that never ran is worse than no comparison.
+
+- **The test matrix now covers the ends of the supported range on every platform.** It pinned 3.10 and 3.13 across the three operating systems and filled in 3.11, 3.12 and 3.14 on Linux, which left 3.14 -- the newest version, and one the wheels are built for -- untested on macOS and Windows. The base matrix is now 3.10 and 3.14 everywhere, with 3.11 to 3.13 filled in on Linux: the same nine jobs, covering the two versions most likely to break on a platform-specific problem. Verified locally on macOS: the extensions build against 3.14.7 and the suite passes.
+
+- The README's channel section described the 15-channel limit as a hard one; it now describes what reuse does and when a diagnostic is still reported.
+
+- `docs/reference.md` drops "channel reuse" from its known limitations and lists it as supported, with the remaining limitation stated precisely: reuse is decided per part rather than per note. Offline rendering joins the supported list.
+
+- The README documents the `render` subcommand and its options, `aldakit.render()` / `Score.render()` in the quick start, and gains an "Audio Export" line in the feature list and a `render` row in the subcommand table.
+
+- The README's Development section gains a "Golden Fixtures" section: what each of the two fixture sets pins, how to regenerate them, and how to get the SoundFont the audio ones need.
+
+- The module map in `docs/api-design.md` covers `midi/channels.py` and `midi/render.py`.
 
 ### Fixed
 
@@ -68,36 +94,9 @@ Scores can now be rendered to audio files, and a part no longer holds a MIDI cha
 
 - **The audio backend's gain was in the wrong unit.** `gain` is documented as a volume factor from 0.0 to 2.0 where 1.0 is unity, but it was passed to TinySoundFont's `tsf_set_output`, whose argument is decibels. Every gain in the documented range was therefore a small boost: the default of 1.0 was +1 dB rather than unity, 0.5 was +0.5 dB rather than half, and 0.0 was 0 dB -- full volume, not silence. It now goes through `tsf_set_volume`, so halving the gain halves the level and zero is silent. Audio playback at the default is about 12% quieter than it was, which is what unity means.
 
-### Changed - internal
-
-- **The generator hands out placeholder channels** (`VIRTUAL_CHANNEL_BASE` and up, allocated without limit) while it walks the AST, because whether reuse is needed cannot be known until the last part has been declared. `PartState.channel` holds a real channel again once `generate()` returns, or -1 for a part that never sounds; `PartState.allocated_channel` keeps the placeholder so the linter can attribute a shared channel back to the parts sharing it.
-
-- **Finding severities are an enum**, `aldakit.Severity`, rather than three module-level strings. The comment above those strings said they were "ordered by how much they should worry the reader", but the order was not in them: it was repeated in a dict inside `lint_score`, and again in the test that checked the ordering. `Severity.rank` reads it back from the order the members are declared in, so it is stated once. The members subclass `str` and keep the old names as aliases, so `finding.severity == "error"` and `from aldakit.analysis import ERROR` both still work. `Severity.__str__` is defined explicitly because `Enum.__format__` changed in 3.11, and without it `aldakit lint` would print "error" on 3.10 and "Severity.ERROR" from 3.11 on.
-
-- **`MELODIC_CHANNELS` moved to `aldakit/midi/channels.py`** and is re-exported from `midi/generator.py`, so existing imports are unaffected.
-
-### Changed - build and CI
-- **The SoundFonts are mirrored on aldakit's own `soundfonts-v1` release.** The site all three were downloaded from has put itself behind a bot challenge that answers every automated request with 403, which broke `aldakit soundfont install` completely -- for every SoundFont, for every user, no matter how often it retried. The catalog now points at byte-identical copies attached to a release of this repository, verified against the same checksums as before, so nothing that depends on the exact bytes had to change. `SOUNDFONT-LICENSES.txt` on that release records each licence in full: FluidR3_GM is MIT, TimGM6mb is GPL-2, and GeneralUser GS carries its author's own permissive licence. They remain third-party works, not part of aldakit.
+- **`aldakit soundfont install` works again.** The site all three SoundFonts were downloaded from has put itself behind a bot challenge that answers every automated request with 403, which broke installation completely -- for every SoundFont, for every user, no matter how often it retried. The catalog now points at byte-identical copies attached to this repository's own `soundfonts-v1` release, verified against the same checksums as before, so nothing that depends on the exact bytes had to change. `SOUNDFONT-LICENSES.txt` on that release records each licence in full: FluidR3_GM is MIT, TimGM6mb is GPL-2, and GeneralUser GS carries its author's own permissive licence. They remain third-party works, not part of aldakit.
 
 - **A refused download explains itself.** A host behind a bot challenge answers every retry with 403, so reporting the status code alone leaves the reader with nothing to do. The error now says that retrying will not help, and names both the URL a browser can still fetch and the path to save it to. An ordinary failure such as a 404 is still reported plainly.
-
-- **A `Golden audio` job** renders every example against the pinned fixtures on Linux and macOS. It caches the SoundFont, keyed on the download catalog, so a run does not depend on a third-party site being up, retries the download if the cache misses and the site is unreachable, and sets `ALDAKIT_REQUIRE_AUDIO_FIXTURES`, which turns "no SoundFont, nothing to compare" from a skip into a failure -- a green tick for a comparison that never ran is worse than no comparison.
-
-- **`make golden-audio`, `make soundfont` and `make test-audio`.** `make generated` is unchanged and still needs no download.
-
-- **The test matrix now covers the ends of the supported range on every platform.** It pinned 3.10 and 3.13 across the three operating systems and filled in 3.11, 3.12 and 3.14 on Linux, which left 3.14 -- the newest version, and one the wheels are built for -- untested on macOS and Windows. The base matrix is now 3.10 and 3.14 everywhere, with 3.11 to 3.13 filled in on Linux: the same nine jobs, covering the two versions most likely to break on a platform-specific problem. Verified locally on macOS: the extensions build against 3.14.7 and the suite passes.
-
-### Changed - documentation
-
-- The README's channel section described the 15-channel limit as a hard one; it now describes what reuse does and when a diagnostic is still reported.
-
-- `docs/reference.md` drops "channel reuse" from its known limitations and lists it as supported, with the remaining limitation stated precisely: reuse is decided per part rather than per note. Offline rendering joins the supported list.
-
-- The README documents the `render` subcommand and its options, `aldakit.render()` / `Score.render()` in the quick start, and gains an "Audio Export" line in the feature list and a `render` row in the subcommand table.
-
-- The README's Development section gains a "Golden Fixtures" section: what each of the two fixture sets pins, how to regenerate them, and how to get the SoundFont the audio ones need.
-
-- The module map in `docs/api-design.md` covers `midi/channels.py` and `midi/render.py`.
 
 ### Tests
 
