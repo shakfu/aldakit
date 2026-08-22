@@ -599,11 +599,15 @@ def _cmd_tempo(ctx: ReplContext, arg: str) -> None:
 def _cmd_status(ctx: ReplContext, arg: str) -> None:
     playing = "playing" if ctx.backend.is_playing() else "idle"
     if ctx.supports_concurrent:
-        mode = "concurrent" if _concurrent(ctx.backend).concurrent_mode else "sequential"
+        mode = (
+            "concurrent" if _concurrent(ctx.backend).concurrent_mode else "sequential"
+        )
         print("Backend: MIDI (libremidi)")
         print(f"Mode: {mode}")
         print(f"Status: {playing}")
-        print(f"Active slots: {_concurrent(ctx.backend).active_slots}/{MAX_PLAYBACK_SLOTS}")
+        print(
+            f"Active slots: {_concurrent(ctx.backend).active_slots}/{MAX_PLAYBACK_SLOTS}"
+        )
     else:
         print("Backend: Audio (TinySoundFont)")
         print(f"Status: {playing}")
