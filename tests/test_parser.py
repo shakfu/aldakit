@@ -706,3 +706,76 @@ class TestUnconsumableTokens:
     )
     def test_valid_music_still_parses(self, source):
         parse(source)
+
+
+class TestSExpressionNewlines:
+    """A newline inside an S-expression is whitespace, not a parse error.
+
+    It used to be neither: ``_parse_lisp_element`` returned None for it without
+    consuming a token, and the loop in ``_parse_sexp`` exited only on ``)`` or
+    end of input, so the parser span forever. Every test here runs the parse on
+    a worker thread so a regression fails the test instead of hanging the run.
+    """
+
+    @staticmethod
+    def parse_within(source: str, seconds: float = 5.0):
+        """Parse ``source``, failing if it does not finish promptly."""
+        import threading
+
+        result: dict[str, object] = {}
+
+        def run() -> None:
+            try:
+                result["ast"] = parse(source, "<test>")
+            except BaseException as error:  # noqa: BLE001 -- re-raised below
+                result["error"] = error
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(seconds)
+        assert not worker.is_alive(), "parsing did not terminate"
+        if "error" in result:
+            raise result["error"]
+        return result["ast"]
+
+    def test_newline_between_elements(self):
+        ast = self.parse_within("(tempo\n120)")
+        sexp = ast.children[0].events[0]
+        assert isinstance(sexp, LispListNode)
+        assert [type(item) for item in sexp.elements] == [
+            LispSymbolNode,
+            LispNumberNode,
+        ]
+        assert sexp.elements[1].value == 120
+
+    def test_newline_is_equivalent_to_a_space(self):
+        def tempo_of(source: str) -> int:
+            part = self.parse_within(source).children[0]
+            return part.events.events[0].elements[1].value
+
+        assert tempo_of("piano: (tempo\n120) c") == tempo_of("piano: (tempo 120) c")
+
+    def test_newline_before_the_closing_paren(self):
+        ast = self.parse_within("(tempo 120\n)")
+        assert len(ast.children[0].events[0].elements) == 2
+
+    def test_newline_inside_a_nested_sexp(self):
+        ast = self.parse_within("(key-sig\n  '(g\n  minor))")
+        sexp = ast.children[0].events[0]
+        assert isinstance(sexp.elements[1], LispQuotedNode)
+
+    def test_unclosed_sexp_followed_by_a_newline_is_an_error(self):
+        with pytest.raises(AldaSyntaxError):
+            self.parse_within("piano: c (\n")
+
+    def test_unclosed_sexp_at_end_of_input_is_an_error(self):
+        with pytest.raises(AldaSyntaxError):
+            self.parse_within("piano: c (")
+
+    def test_unclosed_sexp_spanning_several_lines_is_an_error(self):
+        with pytest.raises(AldaSyntaxError):
+            self.parse_within("piano: c (\nd e\nf g")
+
+    def test_blank_lines_inside_a_sexp(self):
+        ast = self.parse_within("(tempo\n\n\n120)")
+        assert len(ast.children[0].events[0].elements) == 2

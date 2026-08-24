@@ -77,8 +77,31 @@ SWING_RATIO_MAX = 1.0  # exclusive
 
 REPL_PROMPT = "aldakit> "
 REPL_CONTINUATION_PROMPT = "  ... "
-REPL_HISTORY_FILENAME = ".alda_history"
+REPL_HISTORY_FILENAME = ".aldakit_history"
 REPL_COMPLETION_MIN_WORD_LENGTH = 3
+
+# REPL commands that take a filesystem path as their argument.
+REPL_PATH_COMMANDS = ("load", "play", "save", "cd")
+
+# Commands offered by name completion at the start of a line. Shared so both
+# frontends complete against one table rather than drifting copies.
+REPL_COMMAND_NAMES = (
+    "load",
+    "play",
+    "save",
+    "ls",
+    "cd",
+    "pwd",
+    "ports",
+    "instruments",
+    "tempo",
+    "stop",
+    "status",
+    "concurrent",
+    "sequential",
+    "help",
+    "quit",
+)
 REPL_INSTRUMENT_COLUMNS = 4
 
 # =============================================================================

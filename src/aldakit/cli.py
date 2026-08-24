@@ -1203,6 +1203,23 @@ def _resolve_input_port(port_specifier: str | None) -> tuple[str | None, bool]:
     return _resolve_port_specifier(port_specifier, ports, "input")
 
 
+def _select_repl():
+    """Return the REPL entry point the environment asks for.
+
+    Importing lazily keeps prompt_toolkit out of the process entirely when the
+    standard-library frontend is selected.
+    """
+    from .repl_terminal import stdlib_frontend_requested
+
+    if stdlib_frontend_requested():
+        from .repl_terminal import run_terminal_repl
+
+        return run_terminal_repl
+    from .repl import run_repl
+
+    return run_repl
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point for the CLI."""
     parser = create_parser()
@@ -1213,7 +1230,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Handle subcommands
     if args.command == "repl":
-        from .repl import run_repl
+        run_repl = _select_repl()
 
         # CLI args override config, config overrides defaults
         port_arg = args.port if args.port else config.port
@@ -1290,7 +1307,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # If no subcommand given, open the REPL
     if args.command is None:
-        from .repl import run_repl
+        run_repl = _select_repl()
 
         choice = _resolve_backend_interactively(args, config, port)
         if choice.error:

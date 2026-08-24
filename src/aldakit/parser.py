@@ -670,10 +670,21 @@ class Parser:
         )
 
         elements = []
-        while not self._check(TokenType.RIGHT_PAREN) and not self._is_at_end():
+        while True:
+            # A newline inside an S-expression is whitespace, so an attribute
+            # may be written across several lines.
+            self._skip_newlines()
+            if self._check(TokenType.RIGHT_PAREN) or self._is_at_end():
+                break
             element = self._parse_lisp_element()
-            if element:
-                elements.append(element)
+            if element is None:
+                # Nothing was consumed, so looping again would never
+                # terminate. Report the token rather than spin on it.
+                self._error(
+                    "Unexpected token in S-expression",
+                    hint="S-expressions contain symbols, numbers, and strings. Example: (tempo 120)",
+                )
+            elements.append(element)
 
         self._consume(
             TokenType.RIGHT_PAREN,

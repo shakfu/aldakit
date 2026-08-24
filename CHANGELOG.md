@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ReplBackend` did not declare `play`.** Every backend implements it and the REPL's playback callback calls it, but the Protocol omitted it, so a custom backend could satisfy the declared interface and still fail at runtime. Anything already usable as a backend is unaffected.
+
+- **A newline inside an S-expression hung the parser.** `_parse_lisp_element` returned nothing for a newline without consuming it, while the loop in `_parse_sexp` exited only on `)` or end of input, so `piano: (tempo\n120) c` span forever rather than parsing, and an unclosed `(` followed by any further line span rather than reporting the missing `)`. Newlines inside an S-expression are now whitespace, so an attribute may be written across several lines, and a token that cannot be consumed is reported instead of retried. This affected everything that parses, the REPL included, where submitting such input hung the session.
+
+### Added
+
+- **A standard-library REPL frontend, behind `ALDAKIT_STDLIB_REPL=1`.** Set the variable and `aldakit repl` runs an editor built only from the standard library -- history, completion, syntax colour, multiline entry, and the full command set -- with prompt_toolkit never imported. Ctrl+C cancels the line or stops playback, Ctrl+D exits, Ctrl+Z suspends and restores the terminal on resume, long lines wrap, and a resize is picked up by the next redraw. The default remains the prompt_toolkit REPL. Raw mode is POSIX-only for now; Windows and non-TTY input fall back to a plain line-oriented mode.
+
+- **A drop-down completion menu in the standard-library REPL.** Tab opens a vertical list aligned under the token being completed, and the buffer shows the highlighted candidate so the effect of a choice is visible before it is accepted. Tab and Down move forward, Up moves back, both wrapping; Escape restores what was typed; Enter takes the highlighted candidate rather than submitting. Lists longer than ten entries scroll around the selection, and the menu shifts left rather than overflowing a narrow terminal. Every preview is applied to the buffer as it stood when the menu opened, so candidates that replace different ranges -- an instrument name and an attribute, say -- cannot compound.
+
+- **`tests/conftest.py`, isolating the suite from the real home directory.** Config discovery reads `~/.aldakit/config.ini` and the REPL writes `~/.aldakit_history`, so the suite's result depended on the developer's own settings, and a test that saved history overwrote their file. An autouse fixture now points `HOME`, `USERPROFILE`, and `Path.home()` at a throwaway directory -- all three, because `Path.home()` and `os.path.expanduser` resolve `~` by different mechanisms and patching one leaves the other reading the real home. `tests/test_config.py` already isolated itself; nothing else did.
+
+### Changed
+
+- **`repl.py` split into a frontend and a shared core.** Session state, command handlers, backend setup, and playback now live in `aldakit.repl_core`, which imports no terminal library. Both REPL frontends build on it, so command behaviour cannot drift between them. The command tables moved to `constants.py` for the same reason.
+
+- **Tab completion in the standard-library REPL selects from a menu rather than inserting a common prefix.** Readline-style longest-common-prefix insertion fought with the menu's live preview and is gone. A sole candidate is still applied outright, with no menu.
+
+- **The standard-library REPL appends each history entry as it is made**, rather than writing the file once at exit, so an interrupted session keeps what it accumulated. The file is created with owner-only permissions.
+
+- **The REPL history file is now `~/.aldakit_history`.** It was `~/.alda_history`. An existing file is not migrated automatically: the old path is left untouched and the REPL starts empty. The record format is unchanged, so `mv ~/.alda_history ~/.aldakit_history` restores it.
+
 ## [0.3.1]
 
 A tie held across a barline lost the duration on the far side of the bar. `a-8~|2.` sounded as a bare eighth note, a sixth of its written length, and four of the 40 examples were quietly wrong wherever they hold a note across a bar. The parser was discarding any token it could not place, without an error, so nothing reported it; `aldakit lint` called the affected scores clean. **The golden MIDI and audio fixtures for those four examples change.** They had been regenerated from the parser that had the bug and so had pinned the wrong sound as correct since v0.2.0, which is the one failure mode a golden fixture has: it can only ever agree with the implementation that produced it. `tests/test_invariants.py` is the answer to that -- properties taken from the language reference, true independently of any implementation. No example gains or loses a note. The diff is in `tests/golden/examples.json` and `tests/golden/audio.json`.

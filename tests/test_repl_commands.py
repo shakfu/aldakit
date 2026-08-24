@@ -539,10 +539,10 @@ class TestRunReplStartup:
 
         monkeypatch.setattr("aldakit.repl.PromptSession", InstantEof)
         monkeypatch.setattr(
-            "aldakit.repl.LibremidiBackend", lambda **kwargs: QuietBackend()
+            "aldakit.repl_core.LibremidiBackend", lambda **kwargs: QuietBackend()
         )
         monkeypatch.setattr(
-            "aldakit.repl.LibremidiBackend.list_output_ports",
+            "aldakit.repl_core.LibremidiBackend.list_output_ports",
             lambda self: ["Fake"],
             raising=False,
         )
@@ -595,19 +595,21 @@ class TestRunReplStartup:
     def test_startup_file_enters_the_session(self, stubbed_repl, tmp_path, monkeypatch):
         """A loaded file must be savable, and playable, afterwards."""
         from aldakit import repl as repl_module
+        from aldakit import repl_core
 
         song = tmp_path / "song.alda"
         song.write_text("piano: c d e", encoding="utf-8")
 
         captured = {}
-        original = repl_module.ReplSession
+        original = repl_core.ReplSession
 
         class Recording(original):
             def __init__(self):
                 super().__init__()
                 captured["session"] = self
 
-        monkeypatch.setattr(repl_module, "ReplSession", Recording)
+        # The session is built in repl_core, which both frontends share.
+        monkeypatch.setattr(repl_core, "ReplSession", Recording)
         repl_module.run_repl(port_name="Fake", initial_file=song)
 
         assert "piano: c d e" in captured["session"].to_alda()

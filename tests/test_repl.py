@@ -7,6 +7,7 @@ from aldakit import ext  # noqa: F401
 
 from prompt_toolkit.document import Document
 
+from aldakit import repl_core
 from aldakit.repl import (
     AldaLexer,
     AldaCompleter,
@@ -322,7 +323,7 @@ class TestRunRepl:
             def list_output_ports(self):
                 return []
 
-        monkeypatch.setattr(repl, "LibremidiBackend", DummyBackend)
+        monkeypatch.setattr(repl_core, "LibremidiBackend", DummyBackend)
         monkeypatch.setattr("aldakit.midi.backends.HAS_TSF", False)
 
         result = repl.run_repl(use_audio=True, soundfont="/fake/path.sf2")
@@ -340,7 +341,7 @@ class TestRunRepl:
             def __init__(self, soundfont=None):
                 raise FileNotFoundError("SoundFont not found")
 
-        monkeypatch.setattr(repl, "LibremidiBackend", DummyBackend)
+        monkeypatch.setattr(repl_core, "LibremidiBackend", DummyBackend)
         monkeypatch.setattr("aldakit.midi.backends.HAS_TSF", True)
         monkeypatch.setattr("aldakit.midi.backends.TsfBackend", MockTsfBackend)
 
