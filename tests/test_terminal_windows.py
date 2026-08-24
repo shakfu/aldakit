@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from aldakit.terminal import windows
 from aldakit.terminal.keys import KeyDecoder, KeyKind
 from aldakit.terminal.windows import (
     ENABLE_ECHO_INPUT,
@@ -132,6 +133,14 @@ class TestConsoleModes:
         with pytest.raises(ConsoleUnavailable):
             ConsoleModes(kernel32=None).apply()
 
+    def test_an_explicit_no_kernel32_is_not_replaced_by_the_real_api(
+        self, monkeypatch
+    ):
+        """None means absent, on Windows as much as anywhere else."""
+        monkeypatch.setattr(windows, "load_kernel32", lambda: FakeKernel32())
+        assert ConsoleModes(kernel32=None).kernel32 is None
+        assert ConsoleModes().kernel32 is not None
+
 
 class TestConsoleKeySource:
     def read_all(self, source) -> bytes:
@@ -203,3 +212,10 @@ class TestConsoleKeySource:
         source = ConsoleKeySource(msvcrt_module=None)
         assert source.ready(timeout=None) is True
         assert source.read(1) == b""
+
+    def test_an_explicit_none_is_not_replaced_by_the_real_module(self, monkeypatch):
+        """None means absent. Loading msvcrt instead would block on a real
+        console -- on Windows that hangs the test run rather than failing it."""
+        monkeypatch.setattr(windows, "load_msvcrt", lambda: FakeMsvcrt("a"))
+        assert ConsoleKeySource(msvcrt_module=None).msvcrt is None
+        assert ConsoleKeySource().msvcrt is not None

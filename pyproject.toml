@@ -75,6 +75,10 @@ wheel.exclude = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# No test comes close to this. A test that passes it is blocked rather than
+# slow, and the dumped tracebacks say where -- which is otherwise invisible
+# when the run is killed from outside.
+faulthandler_timeout = 120
 
 [tool.coverage.run]
 omit = [

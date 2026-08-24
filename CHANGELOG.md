@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Windows test jobs hung for the full 25-minute job timeout.** `ConsoleModes` and `ConsoleKeySource` took `None` as "not injected" and loaded the real `kernel32` and `msvcrt` in its place, so `ConsoleKeySource(msvcrt_module=None)` -- a test asserting that a source with no `msvcrt` reports end of input rather than polling forever -- got the real `msvcrt` on Windows and blocked in `kbhit()` on a console that never delivers a key. It passed everywhere else only because `msvcrt` does not import there. The two dependencies now default to a private sentinel, so an explicit `None` means absent on every platform. No caller outside the tests passed either argument, so nothing else changes.
+
+- **A blocked test no longer costs a job.** The workflow's test step has its own ten-minute cap, so a hang fails the step and leaves a downloadable log instead of cancelling the job and discarding it, and `faulthandler_timeout` dumps the tracebacks of a test that runs past two minutes, which is where the hang shows up.
+
 ## [0.4.0]
 
 The REPL can run without prompt_toolkit. `ALDAKIT_STDLIB_REPL=1` selects an editor built only from the standard library, with history, a completion menu, syntax colour, multiline entry, reverse search, and the emacs editing keys. It is opt-in: `aldakit repl` still uses the vendored prompt_toolkit copy in `src/aldakit/ext/`, which is unchanged. The reason to have it is that the vendored copy is 153 files and roughly half the wheel, and a frontend that carries none of it can eventually make that an optional install rather than a permanent cost. Nothing about the two is duplicated: `aldakit.repl_core` now holds the session state, command handlers, and playback that both frontends drive, so command behaviour cannot differ between them. **The REPL history file moves to `~/.aldakit_history`** and is not migrated automatically, though the record format is unchanged so moving it by hand works. The Windows console adapter has been written but not run against a real console; POSIX has been driven end to end against a pty. Separately, and unrelated to any of that, two parser-side defects are fixed: a newline inside an S-expression used to hang outright, and a key signature named with a spelled-out accidental was misread, which had `examples/panning.alda` sounding a scale that is not in any key.

@@ -80,6 +80,11 @@ jobs:
         run: uv run ty check src/aldakit/
 
       - name: Test
+        # A test that blocks forever would otherwise hold the runner until
+        # the job timeout, and a cancelled job keeps no downloadable log.
+        # Failing the step instead leaves the log, and pytest's faulthandler
+        # timeout (see pyproject.toml) puts the hung traceback in it.
+        timeout-minutes: 10
         run: uv run pytest tests/ -q
 
   audio:

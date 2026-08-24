@@ -12,6 +12,7 @@ be exercised on any platform.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 STD_INPUT_HANDLE = -10
 STD_OUTPUT_HANDLE = -11
@@ -48,6 +49,13 @@ EXTENDED_KEYS = {
 
 _EXTENDED_LEAD = ("\x00", "\xe0")
 
+#: Default for the injected dependencies below. A distinct sentinel is needed
+#: because ``None`` is a meaningful value: it says the dependency does not
+#: exist, which is the case a test running on Windows wants to exercise.
+#: Defaulting to ``None`` would silently load the real module instead, and a
+#: blocking read on a console that never delivers a key hangs the test run.
+_DETECT: Any = object()
+
 
 class ConsoleUnavailable(RuntimeError):
     """Raised when console modes cannot be read or set."""
@@ -81,8 +89,8 @@ def load_msvcrt():
 class ConsoleModes:
     """Put the console into raw mode and put it back afterwards."""
 
-    def __init__(self, kernel32=None) -> None:
-        self.kernel32 = kernel32 if kernel32 is not None else load_kernel32()
+    def __init__(self, kernel32: Any = _DETECT) -> None:
+        self.kernel32 = load_kernel32() if kernel32 is _DETECT else kernel32
         self._saved: dict[int, int] = {}
         #: Whether the console accepted virtual-terminal input. When it does,
         #: keys arrive as escape sequences and the shared decoder handles them
@@ -152,8 +160,10 @@ class ConsoleKeySource:
     UTF-8 handling, and editing logic are identical on every platform.
     """
 
-    def __init__(self, msvcrt_module=None, virtual_terminal_input: bool = True) -> None:
-        self.msvcrt = msvcrt_module if msvcrt_module is not None else load_msvcrt()
+    def __init__(
+        self, msvcrt_module: Any = _DETECT, virtual_terminal_input: bool = True
+    ) -> None:
+        self.msvcrt = load_msvcrt() if msvcrt_module is _DETECT else msvcrt_module
         self.virtual_terminal_input = virtual_terminal_input
         self._pending = bytearray()
 
