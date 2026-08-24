@@ -24,7 +24,14 @@ class KeyKind(Enum):
     CTRL_U = auto()
     CTRL_W = auto()
     CTRL_J = auto()
+    CTRL_R = auto()
+    CTRL_T = auto()
+    CTRL_Y = auto()
     CTRL_Z = auto()
+    CTRL_UNDO = auto()
+    ALT_B = auto()
+    ALT_D = auto()
+    ALT_F = auto()
     ARROW_LEFT = auto()
     ARROW_RIGHT = auto()
     ARROW_UP = auto()
@@ -52,10 +59,23 @@ _CONTROL_KEYS = {
     9: KeyKind.TAB,
     10: KeyKind.CTRL_J,
     11: KeyKind.CTRL_K,
+    18: KeyKind.CTRL_R,
+    20: KeyKind.CTRL_T,
     21: KeyKind.CTRL_U,
     23: KeyKind.CTRL_W,
+    25: KeyKind.CTRL_Y,
     26: KeyKind.CTRL_Z,
+    31: KeyKind.CTRL_UNDO,
     127: KeyKind.BACKSPACE,
+}
+
+# Meta (Alt) chords, which terminals send as Escape followed by the key. The
+# escape deadline in the reader is what separates these from a lone Escape
+# followed by ordinary typing.
+_ALT_KEYS = {
+    b"b": KeyKind.ALT_B,
+    b"d": KeyKind.ALT_D,
+    b"f": KeyKind.ALT_F,
 }
 
 # Final bytes of a CSI sequence (ESC [ ... final), keyed without parameters.
@@ -188,6 +208,10 @@ class KeyDecoder:
             sequence = bytes(pending[2:end])
             del pending[:end]
             return KeyEvent(_CSI_KEYS.get(sequence, KeyKind.UNKNOWN))
+        alt = _ALT_KEYS.get(bytes(pending[1:2]))
+        if alt is not None:
+            del pending[:2]
+            return KeyEvent(alt)
         if introducer == _SS3_INTRODUCER:
             if len(pending) < 3:
                 if not final:

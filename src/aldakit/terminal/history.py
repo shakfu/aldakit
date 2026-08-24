@@ -129,3 +129,79 @@ def _format_record(entry: str) -> str:
     """Render one entry as a timestamped, ``+``-prefixed record."""
     body = "".join(f"+{line}\n" for line in entry.split("\n"))
     return f"\n# {datetime.datetime.now()}\n{body}"
+
+
+class HistorySearch:
+    """Incremental reverse search over history, as Ctrl+R does.
+
+    The buffer shows the current match while the search runs, and the original
+    line is restored if the search is abandoned.
+    """
+
+    def __init__(self) -> None:
+        self.query = ""
+        self.active = False
+        self.failed = False
+        self.index: int | None = None
+        self._origin: tuple[str, int] | None = None
+
+    def start(self, editor) -> None:
+        """Begin a search, remembering the line to come back to."""
+        self._origin = (editor.state.text, editor.state.cursor)
+        self.query = ""
+        self.index = None
+        self.failed = False
+        self.active = True
+
+    def refine(self, editor, history: History, text: str) -> None:
+        """Extend the query, searching on from the current match."""
+        self.query += text
+        start = len(history.entries) - 1 if self.index is None else self.index
+        self._show(editor, history, self._find(history, start))
+
+    def backspace(self, editor, history: History) -> None:
+        """Shorten the query and search again from the newest entry."""
+        self.query = self.query[:-1]
+        self.failed = False
+        if not self.query:
+            self.index = None
+            return
+        self._show(editor, history, self._find(history, len(history.entries) - 1))
+
+    def again(self, editor, history: History) -> None:
+        """Move to the next older match, if there is one."""
+        if not self.query:
+            return
+        start = len(history.entries) - 1 if self.index is None else self.index - 1
+        self._show(editor, history, self._find(history, start))
+
+    def accept(self) -> None:
+        """Keep the match in the buffer and leave the search."""
+        self.active = False
+
+    def cancel(self, editor) -> None:
+        """Restore the line as it was before the search began."""
+        if self._origin is not None:
+            editor.set_text(self._origin[0])
+            editor.state.cursor = self._origin[1]
+        self.active = False
+
+    def prompt(self) -> str:
+        """The prompt shown in place of the usual one while searching."""
+        state = "failed " if self.failed else ""
+        return f"({state}reverse-i-search)`{self.query}': "
+
+    def _find(self, history: History, start_at: int) -> int | None:
+        needle = self.query.lower()
+        for index in range(min(start_at, len(history.entries) - 1), -1, -1):
+            if needle in history.entries[index].lower():
+                return index
+        return None
+
+    def _show(self, editor, history: History, found: int | None) -> None:
+        if found is None:
+            self.failed = True
+            return
+        self.failed = False
+        self.index = found
+        editor.set_text(history.entries[found])

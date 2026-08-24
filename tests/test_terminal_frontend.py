@@ -434,3 +434,216 @@ def test_menu_stays_on_screen_near_the_right_margin():
     output = renderer.render(editor.state, menu=MenuView(["alpha", "beta"], 0, 12))
     for line in output.split("\n"):
         assert len(line) <= 24
+
+
+def test_decodes_meta_chords_and_the_new_control_keys():
+    assert [item.kind for item in decode_bytes(b"\x1bb\x1bf\x1bd")] == [
+        KeyKind.ALT_B,
+        KeyKind.ALT_F,
+        KeyKind.ALT_D,
+    ]
+    assert [item.kind for item in decode_bytes(b"\x12\x14\x19\x1f")] == [
+        KeyKind.CTRL_R,
+        KeyKind.CTRL_T,
+        KeyKind.CTRL_Y,
+        KeyKind.CTRL_UNDO,
+    ]
+
+
+def test_the_escape_deadline_separates_alt_from_escape_then_typing():
+    """ESC+b arriving together is Alt+B; ESC resolved first is two keys."""
+    together = KeyDecoder()
+    assert together.feed(b"\x1b") == []
+    assert together.feed(b"b") == [event(KeyKind.ALT_B)]
+
+    apart = KeyDecoder()
+    apart.feed(b"\x1b")
+    assert apart.flush() == [event(KeyKind.ESCAPE)]
+    assert apart.feed(b"b") == [event(KeyKind.CHARACTER, "b")]
+
+
+def test_word_movement_steps_over_alphanumeric_runs():
+    editor = LineEditor("piano: c d")
+    editor.state.cursor = 0
+    editor.handle(event(KeyKind.ALT_F))
+    assert editor.state.cursor == len("piano")
+    editor.handle(event(KeyKind.ALT_F))
+    assert editor.state.cursor == len("piano: c")
+    editor.handle(event(KeyKind.ALT_B))
+    assert editor.state.cursor == len("piano: ")
+
+
+def test_word_movement_stops_at_the_ends():
+    editor = LineEditor("abc")
+    editor.state.cursor = 0
+    editor.handle(event(KeyKind.ALT_B))
+    assert editor.state.cursor == 0
+    editor.handle(event(KeyKind.ALT_F))
+    editor.handle(event(KeyKind.ALT_F))
+    assert editor.state.cursor == 3
+
+
+def test_alt_d_kills_the_word_ahead_into_the_kill_ring():
+    editor = LineEditor("piano: c d")
+    editor.state.cursor = len("piano: ")
+    editor.handle(event(KeyKind.ALT_D))
+    assert editor.state.text == "piano:  d"
+    assert editor.kill_ring == "c"
+
+
+def test_kills_fill_the_ring_and_ctrl_y_puts_them_back():
+    for key, text, expected in (
+        (KeyKind.CTRL_W, "one two", "two"),
+        (KeyKind.CTRL_K, "one two", ""),
+        (KeyKind.CTRL_U, "one two", "one two"),
+    ):
+        editor = LineEditor(text)
+        editor.handle(event(key))
+        if expected:
+            assert editor.kill_ring == expected
+            editor.handle(event(KeyKind.CTRL_Y))
+            assert editor.state.text == text
+
+
+def test_ctrl_y_does_nothing_with_an_empty_ring():
+    editor = LineEditor("abc")
+    editor.handle(event(KeyKind.CTRL_Y))
+    assert editor.state.text == "abc"
+
+
+def test_ctrl_t_swaps_the_last_two_characters_at_the_end():
+    editor = LineEditor("abc")
+    editor.handle(event(KeyKind.CTRL_T))
+    assert editor.state.text == "acb"
+
+
+def test_ctrl_t_swaps_around_the_cursor_mid_line():
+    editor = LineEditor("hte")
+    editor.state.cursor = 2
+    editor.handle(event(KeyKind.CTRL_T))
+    assert editor.state.text == "het"
+
+
+def test_ctrl_t_is_a_no_op_on_a_short_buffer():
+    editor = LineEditor("a")
+    editor.handle(event(KeyKind.CTRL_T))
+    assert editor.state.text == "a"
+
+
+def test_undo_steps_back_over_a_typed_run_not_a_letter():
+    editor = LineEditor()
+    for character in "hello":
+        editor.handle(event(KeyKind.CHARACTER, character))
+    editor.handle(event(KeyKind.CTRL_UNDO))
+    assert editor.state.text == ""
+
+
+def test_undo_restores_a_kill():
+    editor = LineEditor("one two")
+    editor.handle(event(KeyKind.CTRL_W))
+    editor.handle(event(KeyKind.CTRL_UNDO))
+    assert editor.state.text == "one two"
+
+
+def test_undo_separates_typing_interrupted_by_another_edit():
+    editor = LineEditor()
+    for character in "ab":
+        editor.handle(event(KeyKind.CHARACTER, character))
+    editor.handle(event(KeyKind.BACKSPACE))
+    for character in "cd":
+        editor.handle(event(KeyKind.CHARACTER, character))
+    editor.handle(event(KeyKind.CTRL_UNDO))
+    assert editor.state.text == "a"
+
+
+def test_undo_on_an_untouched_buffer_is_harmless():
+    editor = LineEditor("abc")
+    editor.handle(event(KeyKind.CTRL_UNDO))
+    assert editor.state.text == "abc"
+
+
+def test_undo_history_is_bounded():
+    editor = LineEditor()
+    editor.max_undo = 3
+    for character in "abcdefgh":
+        editor.snapshot()
+        editor.handle(event(KeyKind.CHARACTER, character))
+    assert len(editor._undo) <= 3 + 1
+
+
+class TestHistorySearch:
+    """Incremental reverse search, as Ctrl+R does."""
+
+    entries = ["piano: c", "violin: e", "piano: d e"]
+
+    def search(self, tmp_path):
+        from aldakit.terminal.history import HistorySearch
+
+        history = History(tmp_path / "history")
+        history.entries = list(self.entries)
+        editor = LineEditor("draft")
+        finder = HistorySearch()
+        finder.start(editor)
+        return finder, editor, history
+
+    def test_finds_the_newest_match(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "pia":
+            finder.refine(editor, history, character)
+        assert editor.state.text == "piano: d e"
+        assert finder.prompt() == "(reverse-i-search)`pia': "
+
+    def test_repeating_the_search_walks_backwards(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "pia":
+            finder.refine(editor, history, character)
+        finder.again(editor, history)
+        assert editor.state.text == "piano: c"
+
+    def test_running_out_of_matches_is_reported_not_wrapped(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "pia":
+            finder.refine(editor, history, character)
+        finder.again(editor, history)
+        finder.again(editor, history)
+        assert finder.failed is True
+        assert editor.state.text == "piano: c"
+        assert finder.prompt().startswith("(failed reverse-i-search)")
+
+    def test_no_match_leaves_the_buffer_alone(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "zzz":
+            finder.refine(editor, history, character)
+        assert finder.failed is True
+        assert editor.state.text == "draft"
+
+    def test_backspace_shortens_the_query(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "piaX":
+            finder.refine(editor, history, character)
+        assert finder.failed is True
+        finder.backspace(editor, history)
+        assert finder.query == "pia"
+        assert finder.failed is False
+
+    def test_cancel_restores_the_line(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "pia":
+            finder.refine(editor, history, character)
+        finder.cancel(editor)
+        assert editor.state.text == "draft"
+        assert finder.active is False
+
+    def test_accept_keeps_the_match(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "pia":
+            finder.refine(editor, history, character)
+        finder.accept()
+        assert editor.state.text == "piano: d e"
+        assert finder.active is False
+
+    def test_search_is_case_insensitive(self, tmp_path):
+        finder, editor, history = self.search(tmp_path)
+        for character in "PIA":
+            finder.refine(editor, history, character)
+        assert editor.state.text == "piano: d e"

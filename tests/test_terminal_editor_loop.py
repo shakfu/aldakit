@@ -16,7 +16,15 @@ from aldakit.constants import REPL_HISTORY_FILENAME
 from aldakit.terminal.app import run_editor, run_line_mode
 from aldakit.terminal.history import History
 from tests.terminal_harness import (
+    ALT_B,
+    ALT_D,
     ALT_ENTER,
+    ALT_F,
+    CTRL_R,
+    CTRL_T,
+    CTRL_UNDO,
+    CTRL_W,
+    CTRL_Y,
     BACKSPACE,
     CTRL_C,
     CTRL_D,
@@ -24,6 +32,7 @@ from tests.terminal_harness import (
     DOWN,
     ENTER,
     ESCAPE,
+    HOME,
     IDLE,
     LEFT,
     PAGE_UP,
@@ -493,3 +502,66 @@ def test_windows_uses_the_line_oriented_frontend(isolated_home, monkeypatch):
     )
     assert status == 0
     assert submitted == ["piano: c"]
+
+
+def test_ctrl_r_searches_history_and_enter_submits_the_match(isolated_home):
+    history = History(isolated_home / "history")
+    for entry in ("piano: c", "violin: e", "piano: d e"):
+        history.add(entry)
+    submitted, output, _ = drive(keys(CTRL_R, b"pia", ENTER), history=history)
+    assert submitted == ["piano: d e"]
+    assert "reverse-i-search" in output
+
+
+def test_ctrl_r_twice_reaches_the_older_match(isolated_home):
+    history = History(isolated_home / "history")
+    for entry in ("piano: c", "violin: e", "piano: d e"):
+        history.add(entry)
+    submitted, _, _ = drive(keys(CTRL_R, b"pia", CTRL_R, ENTER), history=history)
+    assert submitted == ["piano: c"]
+
+
+def test_escape_abandons_the_search_and_restores_the_line(isolated_home):
+    history = History(isolated_home / "history")
+    history.add("piano: c")
+    submitted, _, _ = drive(
+        [b"draft", CTRL_R, b"pia", ESCAPE, IDLE, ENTER], history=history
+    )
+    assert submitted == ["draft"]
+
+
+def test_a_failed_search_says_so(isolated_home):
+    history = History(isolated_home / "history")
+    history.add("piano: c")
+    _, output, _ = drive(keys(CTRL_R, b"zzz"), history=history)
+    assert "failed reverse-i-search" in output
+
+
+def test_word_movement_positions_the_cursor(isolated_home):
+    submitted, _, _ = drive(keys(b"piano: c d", ALT_B, ALT_B, b"X", ENTER))
+    assert submitted == ["piano: Xc d"]
+
+
+def test_alt_f_moves_forward_by_a_word(isolated_home):
+    submitted, _, _ = drive(keys(b"abc def", HOME, ALT_F, b"X", ENTER))
+    assert submitted == ["abcX def"]
+
+
+def test_alt_d_deletes_the_word_ahead(isolated_home):
+    submitted, _, _ = drive(keys(b"one two", HOME, ALT_D, ENTER))
+    assert submitted == ["two"]
+
+
+def test_kill_and_yank_round_trip(isolated_home):
+    submitted, _, _ = drive(keys(b"one two", CTRL_W, CTRL_Y, ENTER))
+    assert submitted == ["one two"]
+
+
+def test_ctrl_t_fixes_a_transposed_typo(isolated_home):
+    submitted, _, _ = drive(keys(b"acb", CTRL_T, ENTER))
+    assert submitted == ["abc"]
+
+
+def test_undo_reverts_the_last_edit(isolated_home):
+    submitted, _, _ = drive(keys(b"one two", CTRL_W, CTRL_UNDO, ENTER))
+    assert submitted == ["one two"]

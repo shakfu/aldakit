@@ -12,7 +12,7 @@ from typing import BinaryIO, cast
 from ..constants import REPL_CONTINUATION_PROMPT, REPL_HISTORY_FILENAME, REPL_PROMPT
 from .completion import CompletionMenu, ReplCompleter
 from .editor import EditActionKind, LineEditor
-from .history import History
+from .history import History, HistorySearch
 from .keys import KeyKind
 from .platform import (
     RawModeUnavailable,
@@ -97,6 +97,7 @@ def run_editor(
     history_index: int | None = None
     history_draft = ""
     menu = CompletionMenu()
+    search = HistorySearch()
     reader = TerminalReader(
         cast(BinaryIO, getattr(input_stream, "buffer", input_stream))
     )
@@ -111,7 +112,8 @@ def run_editor(
         if menu.is_open:
             labels, selected = menu.visible()
             view = MenuView(labels, selected, menu.anchor)
-        output_stream.write(renderer.render(editor.state, menu=view))
+        prompt = search.prompt() if search.active else REPL_PROMPT
+        output_stream.write(renderer.render(editor.state, prompt, menu=view))
         output_stream.flush()
 
     def leave_editor_line() -> None:
@@ -130,6 +132,33 @@ def run_editor(
                     leave_editor_line()
                     output_stream.write(message.rstrip("\n") + "\r\n")
                     draw()
+                continue
+
+            if search.active:
+                if event.kind is KeyKind.CTRL_R:
+                    search.again(editor, history)
+                    draw()
+                    continue
+                if event.kind is KeyKind.CHARACTER:
+                    search.refine(editor, history, event.text)
+                    draw()
+                    continue
+                if event.kind is KeyKind.BACKSPACE:
+                    search.backspace(editor, history)
+                    draw()
+                    continue
+                if event.kind in (KeyKind.ESCAPE, KeyKind.CTRL_C):
+                    search.cancel(editor)
+                    draw()
+                    continue
+                # Anything else leaves the search with the match in hand and
+                # is then handled as an ordinary key.
+                search.accept()
+                history_index = None
+            elif event.kind is KeyKind.CTRL_R and history.entries:
+                menu.close()
+                search.start(editor)
+                draw()
                 continue
 
             if menu.is_open:
