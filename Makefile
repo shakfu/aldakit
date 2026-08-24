@@ -75,8 +75,15 @@ lint:
 fix:
 	@uv run ruff check --fix src/ tests/ scripts/
 
+# CI type-checks on Linux, macOS and Windows, and the stdlib stubs differ
+# between them: termios exists only on POSIX, msvcrt only on Windows. Each
+# platform is checked here so a platform-specific error is caught locally
+# rather than on the Windows runner.
 typecheck:
-	@uv run ty check src/aldakit/
+	@for platform in linux darwin win32; do \
+		echo "ty check --python-platform $$platform"; \
+		uv run ty check --python-platform $$platform src/aldakit/ || exit 1; \
+	done
 
 # What CI checks, in the order CI checks it. A target named for quality
 # assurance that never ran the tests was the wrong shape.

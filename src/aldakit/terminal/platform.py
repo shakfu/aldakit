@@ -84,7 +84,7 @@ class TerminalMode:
 
     def apply(self) -> None:
         """Enter raw mode, if the stream is a terminal that supports it."""
-        if os.name == "nt":
+        if sys.platform == "win32":
             self._apply_windows()
             return
         if self._old is not None:
@@ -134,9 +134,10 @@ class TerminalMode:
 
     def restore(self) -> None:
         """Restore the settings captured by :meth:`apply`."""
-        if self._console is not None:
-            self._console.restore()
-            self._console = None
+        if sys.platform == "win32":
+            if self._console is not None:
+                self._console.restore()
+                self._console = None
             return
         if self._old is None or self._fd is None:
             return
@@ -174,7 +175,7 @@ class TerminalReader:
         self._queue: list[KeyEvent] = []
         # select() on Windows only accepts sockets, so the descriptor path
         # is POSIX-only; elsewhere reads fall back to the stream itself.
-        self._fd = _descriptor_of(stream) if os.name != "nt" else None
+        self._fd = None if sys.platform == "win32" else _descriptor_of(stream)
 
     def read_event(self, timeout: float | None = None) -> KeyEvent | None:
         """Return the next event, or ``None`` if ``timeout`` elapsed first.
