@@ -8,6 +8,7 @@ plain-text output when colour is unavailable.
 from __future__ import annotations
 
 import re
+import signal
 from pathlib import Path
 
 import pytest
@@ -417,6 +418,9 @@ def test_submitted_line_is_left_before_external_output(isolated_home):
     assert output.index("\r\n") < len(output)
 
 
+@pytest.mark.skipif(
+    not hasattr(signal, "SIGTSTP"), reason="job control is a POSIX concept"
+)
 def test_ctrl_z_suspends_and_restores_raw_mode(isolated_home, monkeypatch):
     import aldakit.terminal.app as app
 
@@ -438,6 +442,23 @@ def test_ctrl_z_suspends_and_restores_raw_mode(isolated_home, monkeypatch):
     assert submitted == ["piano: c"]
     # Raw mode is dropped for the stop and re-entered on resume.
     assert calls == ["apply", "restore", "stop", "apply", "restore"]
+
+
+def test_ctrl_z_is_ignored_where_suspension_does_not_exist(
+    isolated_home, monkeypatch
+):
+    """Windows has no SIGTSTP. Ctrl+Z must be dropped, not raise."""
+    import aldakit.terminal.app as app
+
+    class NoJobControl:
+        """A signal module without SIGTSTP, as Windows has."""
+
+    monkeypatch.setattr(app, "signal", NoJobControl)
+    monkeypatch.setattr(
+        app.os, "kill", lambda pid, sig: pytest.fail("no signal to send")
+    )
+    submitted, _, _ = drive(keys(b"piano: c", b"\x1a", ENTER))
+    assert submitted == ["piano: c"]
 
 
 def test_line_mode_continues_on_a_trailing_backslash(isolated_home):
@@ -478,6 +499,49 @@ def test_editor_stops_when_the_session_asks_to_exit(isolated_home):
         output_stream=FakeOutput(),
     )
     assert submitted == [":quit"]
+
+
+def test_the_loop_runs_on_windows_against_the_stream_it_was_given(
+    isolated_home, monkeypatch
+):
+    """The whole loop, with every Windows branch taken.
+
+    Regression: the console adapter works on the process's own handles, so
+    with a test double for a terminal it used to reach past the stream, fail
+    to find a console, and drop the session into line mode -- which is not
+    what a Windows user with a real console gets, and left the Windows half
+    of this suite covering the wrong code.
+    """
+    import aldakit.terminal.app as app
+    import aldakit.terminal.platform as platform
+    import aldakit.terminal.windows as windows
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the real console must not be touched")
+
+    monkeypatch.setattr(app, "_is_windows", lambda: True)
+    monkeypatch.setattr(platform.sys, "platform", "win32")
+    monkeypatch.setattr(windows, "ConsoleModes", refuse)
+    monkeypatch.setattr(windows, "ConsoleKeySource", refuse)
+
+    submitted, output, status = drive(keys(b"piano: c", ENTER))
+    assert submitted == ["piano: c"]
+    assert status == 0
+    assert "piano: c" in ANSI.sub("", output)
+
+
+def test_the_console_source_is_used_for_a_real_console(isolated_home, monkeypatch):
+    """The other half of the rule: a stream with a terminal descriptor is
+    the console, so keys come from the adapter rather than the stream."""
+    import aldakit.terminal.app as app
+    from aldakit.terminal.platform import TerminalMode
+
+    monkeypatch.setattr(app, "_is_windows", lambda: True)
+    monkeypatch.setattr(app, "descriptor_of", lambda stream: 0)
+    source = app._key_source(FakeInput(b""), TerminalMode())
+    from aldakit.terminal.windows import ConsoleKeySource
+
+    assert isinstance(source, ConsoleKeySource)
 
 
 def test_windows_reads_keys_through_the_console_source(isolated_home, monkeypatch):

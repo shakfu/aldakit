@@ -1,7 +1,10 @@
 """Tests for the dependency-free terminal frontend."""
 
+import sys
 from io import StringIO
 from pathlib import Path
+
+import pytest
 
 from aldakit.terminal.app import run_line_mode
 from aldakit.terminal.color import tokenize_alda
@@ -116,6 +119,7 @@ def test_line_mode_uses_the_supplied_history(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
     target = tmp_path / "history"
@@ -203,7 +207,10 @@ def test_attribute_completion_uses_absolute_offsets_on_later_lines():
 def test_path_completion_preserves_a_typed_home_prefix(tmp_path, monkeypatch):
     (tmp_path / "music").mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    # Both, or the completion resolves "~" through the other one: expanduser
+    # reads HOME on POSIX and USERPROFILE on Windows.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     completer = ReplCompleter()
     assert [item.replacement for item in completer.complete(":cd ~/mu")] == ["~/music/"]
 
@@ -283,6 +290,10 @@ def test_save_trims_to_the_entry_limit(tmp_path):
     assert reloaded.entries == ["two", "three"]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits; Windows files inherit the directory's ACL",
+)
 def test_history_file_is_not_world_readable(tmp_path):
     import stat
 
@@ -304,6 +315,29 @@ def test_malformed_records_are_ignored(tmp_path):
     history = History(path)
     history.load()
     assert history.entries == ["piano: c", "violin: g"]
+
+
+def test_records_are_written_with_bare_newlines(tmp_path):
+    """The file is shared with prompt_toolkit, which writes it in binary.
+
+    Text mode would translate on Windows, and a record separated by CRLF
+    reads back with a stray carriage return on the end of every entry.
+    """
+    path = tmp_path / "history"
+    history = History(path)
+    history.append("piano: c")
+    history.add("violin: e\nf")
+    history.save()
+    assert b"\r\n" not in path.read_bytes()
+
+
+def test_a_file_with_crlf_records_still_round_trips(tmp_path):
+    """A file left by an earlier Windows session must not keep its CRs."""
+    path = tmp_path / "history"
+    path.write_bytes(b"\r\n# 2026-01-01\r\n+piano: c\r\n+d e\r\n")
+    history = History(path)
+    history.load()
+    assert history.entries == ["piano: c\nd e"]
 
 
 def test_load_ignores_a_missing_file(tmp_path):

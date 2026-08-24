@@ -41,7 +41,11 @@ class History:
             text = "".join(lines)
             entries.append(text[:-1] if text.endswith("\n") else text)
 
-        for line in raw.decode("utf-8", errors="replace").splitlines(keepends=True):
+        # CRLF is normalized rather than split on: a file written by an
+        # earlier Windows session, or moved through a tool that rewrote its
+        # line endings, would otherwise leave a stray CR on every entry.
+        text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
+        for line in text.splitlines(keepends=True):
             if line.startswith("+"):
                 lines.append(line[1:])
                 continue
@@ -82,7 +86,12 @@ class History:
                 os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                 _HISTORY_FILE_MODE,
             )
-            with os.fdopen(descriptor, "a", encoding="utf-8") as output:
+            # newline="\n" rather than the platform default: the format is
+            # shared with prompt_toolkit, which writes the file in binary and
+            # so always separates records with a bare LF.
+            with os.fdopen(
+                descriptor, "a", encoding="utf-8", newline="\n"
+            ) as output:
                 output.write(record)
         except OSError:
             # A history file that cannot be written must not end the session.
@@ -98,7 +107,9 @@ class History:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            with os.fdopen(
+                descriptor, "w", encoding="utf-8", newline="\n"
+            ) as output:
                 for entry in self.entries[-self.limit:]:
                     output.write(_format_record(entry))
                 output.flush()

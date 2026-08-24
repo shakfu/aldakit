@@ -19,6 +19,7 @@ from .platform import (
     TerminalMode,
     TerminalReader,
     capabilities,
+    descriptor_of,
 )
 from .render import MenuView, Renderer, TerminalCapabilities as RenderCapabilities
 
@@ -288,9 +289,12 @@ def _key_source(input_stream, mode: TerminalMode):
     """Return the byte source the reader should decode.
 
     On Windows keys come from the console rather than a readable descriptor;
-    everywhere else the stream's own binary buffer is it.
+    everywhere else the stream's own binary buffer is it. A stream owning no
+    descriptor is not the console -- a test double, or an in-memory stream --
+    so its own bytes are read there too, rather than the console adapter
+    reaching past the stream it was given.
     """
-    if _is_windows():
+    if _is_windows() and descriptor_of(input_stream) is not None:
         from .windows import ConsoleKeySource
 
         return ConsoleKeySource(

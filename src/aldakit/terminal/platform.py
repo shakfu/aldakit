@@ -84,15 +84,18 @@ class TerminalMode:
 
     def apply(self) -> None:
         """Enter raw mode, if the stream is a terminal that supports it."""
-        if sys.platform == "win32":
-            self._apply_windows()
-            return
-        if self._old is not None:
+        if self.active:
             return
         fd = self._descriptor()
         if fd is None:
             # A stream that reports itself as a terminal but owns no real
-            # descriptor, such as a test double. There is nothing to set.
+            # descriptor, such as a test double. There is nothing to set --
+            # on either platform. The Windows path below works on the
+            # process's own console handles, so without this check it would
+            # reach past the stream it was given and touch the real console.
+            return
+        if sys.platform == "win32":
+            self._apply_windows()
             return
         import termios
 
@@ -151,14 +154,7 @@ class TerminalMode:
 
     def _descriptor(self) -> int | None:
         """Return a real terminal descriptor for the stream, if it has one."""
-        try:
-            fd = self.stream.fileno()
-        except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
-            return None
-        try:
-            return fd if os.isatty(fd) else None
-        except OSError:
-            return None
+        return descriptor_of(self.stream)
 
 
 class TerminalReader:
@@ -175,7 +171,7 @@ class TerminalReader:
         self._queue: list[KeyEvent] = []
         # select() on Windows only accepts sockets, so the descriptor path
         # is POSIX-only; elsewhere reads fall back to the stream itself.
-        self._fd = None if sys.platform == "win32" else _descriptor_of(stream)
+        self._fd = None if sys.platform == "win32" else descriptor_of(stream)
 
     def read_event(self, timeout: float | None = None) -> KeyEvent | None:
         """Return the next event, or ``None`` if ``timeout`` elapsed first.
@@ -241,7 +237,7 @@ class TerminalReader:
             return b""
 
 
-def _descriptor_of(stream) -> int | None:
+def descriptor_of(stream) -> int | None:
     """Return the stream's descriptor when it refers to a real terminal."""
     try:
         fd = stream.fileno()
