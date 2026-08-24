@@ -57,18 +57,6 @@ def run_editor(
             history=history,
         )
 
-    if _is_windows():
-        # Raw mode on Windows needs a console adapter this package does not
-        # have yet. Degrade deliberately rather than read a canonical stdin
-        # through an editor that assumes raw input.
-        return run_line_mode(
-            submit,
-            should_exit=should_exit,
-            input_stream=input_stream,
-            output_stream=output_stream,
-            history=history,
-        )
-
     mode = TerminalMode(input_stream)
     try:
         mode.apply()
@@ -98,9 +86,7 @@ def run_editor(
     history_draft = ""
     menu = CompletionMenu()
     search = HistorySearch()
-    reader = TerminalReader(
-        cast(BinaryIO, getattr(input_stream, "buffer", input_stream))
-    )
+    reader = TerminalReader(cast(BinaryIO, _key_source(input_stream, mode)))
 
     def draw() -> None:
         # Re-read the width so a resize is picked up without a SIGWINCH
@@ -296,6 +282,21 @@ def _suspend(mode: TerminalMode) -> None:
             mode.apply()
         except RawModeUnavailable:
             pass
+
+
+def _key_source(input_stream, mode: TerminalMode):
+    """Return the byte source the reader should decode.
+
+    On Windows keys come from the console rather than a readable descriptor;
+    everywhere else the stream's own binary buffer is it.
+    """
+    if _is_windows():
+        from .windows import ConsoleKeySource
+
+        return ConsoleKeySource(
+            virtual_terminal_input=mode.virtual_terminal_input
+        )
+    return getattr(input_stream, "buffer", input_stream)
 
 
 def _is_windows() -> bool:

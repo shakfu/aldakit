@@ -63,7 +63,11 @@ from ..midi.types import (
     lookup_instrument,
     note_to_midi_raw,
 )
-from ..theory import key_signature_from_string, key_signature_from_symbols
+from ..theory import (
+    key_signature_from_accidental_words,
+    key_signature_from_string,
+    key_signature_from_symbols,
+)
 from .channels import (
     MELODIC_CHANNELS as MELODIC_CHANNELS,
 )
@@ -906,6 +910,7 @@ class MidiGenerator(ASTVisitor):
 
         # Extract symbols from the list
         symbols = []
+        nested = False
         i = 0
         while i < len(node.elements):
             elem = node.elements[i]
@@ -913,10 +918,16 @@ class MidiGenerator(ASTVisitor):
                 symbols.append(elem.name.lower())
             elif isinstance(elem, LispListNode):
                 # Nested list like (flat) or (sharp)
+                nested = True
                 if elem.elements and isinstance(elem.elements[0], LispSymbolNode):
                     symbols.append(elem.elements[0].name.lower())
             i += 1
 
+        if nested:
+            # A nested (flat) or (sharp) marks the association-list form. The
+            # symbols alone could read as a key name once flattened, so the
+            # structure is what settles it.
+            return key_signature_from_accidental_words(symbols)
         return key_signature_from_symbols(symbols)
 
     def visit_VariableDefinitionNode(self, node: VariableDefinitionNode) -> None:

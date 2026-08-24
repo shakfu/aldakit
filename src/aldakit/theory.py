@@ -244,6 +244,11 @@ def key_signature_from_string(spec: str) -> dict[str, str]:
     return key_sig
 
 
+#: Accidental words as they are spelled in a quoted list, mapped to the
+#: accidental characters the key tables and ``parse_root`` use.
+ACCIDENTAL_WORDS: dict[str, str] = {"flat": "-", "sharp": "+"}
+
+
 def key_signature_from_accidental_words(symbols: list[str]) -> dict[str, str]:
     """Parse ``["e", "flat", "b", "flat"]`` into ``{"e": "-", "b": "-"}``."""
     key_sig: dict[str, str] = {}
@@ -251,13 +256,9 @@ def key_signature_from_accidental_words(symbols: list[str]) -> dict[str, str]:
     while i < len(symbols):
         if symbols[i] in PITCH_SEMITONES and i + 1 < len(symbols):
             letter = symbols[i]
-            word = symbols[i + 1]
-            if word == "flat":
-                key_sig[letter] = "-"
-                i += 2
-                continue
-            if word == "sharp":
-                key_sig[letter] = "+"
+            accidental = ACCIDENTAL_WORDS.get(symbols[i + 1])
+            if accidental is not None:
+                key_sig[letter] = accidental
                 i += 2
                 continue
         i += 1
@@ -287,17 +288,34 @@ def mode_key_signature(root: str, mode: str) -> dict[str, str] | None:
 def key_signature_from_symbols(symbols: list[str]) -> dict[str, str] | None:
     """Resolve a key signature written as symbols in a quoted list.
 
-    Handles ``["g", "minor"]``, ``["c", "ionian"]`` and the spelled-out
-    ``["e", "flat", "b", "flat"]`` form. Returns None when nothing matches.
+    Handles ``["g", "minor"]``, ``["c", "ionian"]``, the spelled-out root of
+    ``["a", "flat", "major"]``, and the accidental list ``["e", "flat", "b",
+    "flat"]``. Returns None when nothing matches.
+
+    A root and an accidental word begin both the key-name and the accidental
+    forms, so they are told apart by what follows: a key name has exactly one
+    word after the accidental, and that word names a scale or mode.
     """
     if len(symbols) < 2:
         return None
 
-    if symbols[1] in ("flat", "sharp"):
+    if len(symbols) == 3 and symbols[1] in ACCIDENTAL_WORDS:
+        root = symbols[0] + ACCIDENTAL_WORDS[symbols[1]]
+        named = _named_or_modal(root, symbols[2])
+        if named is not None:
+            return named
+        # Not a key after all, so read it the other way rather than fail.
         return key_signature_from_accidental_words(symbols)
 
-    named = KEY_SIGNATURES.get(" ".join(symbols))
+    if symbols[1] in ACCIDENTAL_WORDS:
+        return key_signature_from_accidental_words(symbols)
+
+    return _named_or_modal(symbols[0], symbols[1])
+
+
+def _named_or_modal(root: str, quality: str) -> dict[str, str] | None:
+    """Look a key up by name, falling back to calculating a mode's signature."""
+    named = KEY_SIGNATURES.get(f"{root} {quality}")
     if named is not None:
         return named.copy()
-
-    return mode_key_signature(symbols[0], symbols[1])
+    return mode_key_signature(root, quality)

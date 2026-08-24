@@ -480,24 +480,33 @@ def test_editor_stops_when_the_session_asks_to_exit(isolated_home):
     assert submitted == [":quit"]
 
 
-def test_windows_uses_the_line_oriented_frontend(isolated_home, monkeypatch):
-    """Raw mode is unimplemented there, so degrade rather than misbehave."""
+def test_windows_reads_keys_through_the_console_source(isolated_home, monkeypatch):
+    """On Windows the editor runs, taking keys from the console adapter."""
     import aldakit.terminal.app as app
+    from aldakit.terminal.windows import ConsoleKeySource
 
     monkeypatch.setattr(app, "_is_windows", lambda: True)
 
-    class TextInput(FakeOutput):
-        pass
+    class FakeConsole:
+        """A msvcrt stand-in yielding one scripted keystroke at a time."""
 
-    stream = TextInput()
-    stream.write("piano: c\n")
-    stream.seek(0)
+        def __init__(self, script: str) -> None:
+            self.script = list(script)
+
+        def kbhit(self) -> bool:
+            return True
+
+        def getwch(self) -> str:
+            return self.script.pop(0) if self.script else ""
+
+    source = ConsoleKeySource(FakeConsole("piano: c\r"), virtual_terminal_input=True)
+    monkeypatch.setattr(app, "_key_source", lambda stream, mode: source)
 
     submitted: list[str] = []
     status = run_editor(
         submitted.append,
         history=History(isolated_home / "history"),
-        input_stream=stream,
+        input_stream=FakeInput(b""),
         output_stream=FakeOutput(),
     )
     assert status == 0

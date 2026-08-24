@@ -779,3 +779,64 @@ class TestSExpressionNewlines:
     def test_blank_lines_inside_a_sexp(self):
         ast = self.parse_within("(tempo\n\n\n120)")
         assert len(ast.children[0].events[0].elements) == 2
+
+
+class TestKeySignatureForms:
+    """The quoted-list forms `docs/alda-language/attributes.md` documents.
+
+    A spelled-out root and a spelled-out accidental list both begin
+    `<letter> flat`, so the two are told apart by what follows and by whether
+    the accidentals are written as nested lists.
+    """
+
+    @staticmethod
+    def key_signature_of(source: str) -> dict[str, str]:
+        from aldakit.analysis import inspect_score
+
+        return inspect_score(f"piano: (key-signature {source}) c").parts[0].key_signature
+
+    def test_a_spelled_out_root_names_a_key(self):
+        assert self.key_signature_of("'(a flat major)") == {
+            "b": "-", "e": "-", "a": "-", "d": "-",
+        }
+
+    def test_the_documented_e_flat_minor_example(self):
+        """`'(e flat minor)` is given in the docs as an accepted value."""
+        assert self.key_signature_of("'(e flat minor)") == {
+            "b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-",
+        }
+
+    def test_a_plain_root_still_names_a_key(self):
+        assert self.key_signature_of("'(g minor)") == {"b": "-", "e": "-"}
+
+    def test_nested_accidentals_are_not_read_as_a_key_name(self):
+        assert self.key_signature_of("'(e (flat) b (flat))") == {"e": "-", "b": "-"}
+
+    def test_the_association_list_form(self):
+        assert self.key_signature_of("'(f (sharp) c (sharp) g (sharp))") == {
+            "f": "+", "c": "+", "g": "+",
+        }
+
+    def test_bare_accidental_words_still_work(self):
+        assert self.key_signature_of("'(e flat b flat)") == {"e": "-", "b": "-"}
+
+    def test_nesting_settles_an_otherwise_ambiguous_list(self):
+        """Flattened, this reads as a key name; the nesting says otherwise."""
+        assert self.key_signature_of("'(e (flat) minor)") == {"e": "-"}
+
+    def test_the_string_form_is_unaffected(self):
+        assert self.key_signature_of('"f+ c+ g+"') == {"f": "+", "c": "+", "g": "+"}
+
+    def test_panning_example_sounds_the_documented_scale(self):
+        """`examples/panning.alda` writes A flat major and then its scale."""
+        from pathlib import Path
+
+        from aldakit.midi.generator import generate_midi
+        from aldakit.parser import parse as parse_source
+
+        source = Path(__file__).parent.parent / "examples" / "panning.alda"
+        sequence = generate_midi(parse_source(source.read_text(encoding="utf-8"), "panning.alda"))
+        # Ab Bb C Db Eb F G Ab, the first eight notes of the score.
+        assert [note.pitch for note in sequence.notes[:8]] == [
+            68, 70, 72, 73, 75, 77, 79, 80,
+        ]

@@ -138,6 +138,38 @@ class TestTheoryCalculations:
             (["f", "sharp"], {"f": "+"}),
             (["g"], None),
             (["h", "minor"], None),
+            # A spelled-out root followed by a scale names a key, and is not
+            # the root plus a stray word. The docs give '(e flat minor) as an
+            # accepted value, and it used to yield only a lone E flat.
+            (
+                ["a", "flat", "major"],
+                {"b": "-", "e": "-", "a": "-", "d": "-"},
+            ),
+            (
+                ["e", "flat", "minor"],
+                {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-", "c": "-"},
+            ),
+            (
+                ["b", "flat", "major"],
+                {"b": "-", "e": "-"},
+            ),
+            (
+                ["f", "sharp", "major"],
+                {"f": "+", "c": "+", "g": "+", "d": "+", "a": "+", "e": "+"},
+            ),
+            (
+                ["c", "sharp", "minor"],
+                {"f": "+", "c": "+", "g": "+", "d": "+"},
+            ),
+            # A spelled-out root works for modes too, which are calculated
+            # rather than tabulated.
+            (
+                ["e", "flat", "dorian"],
+                # E flat dorian shares D flat major's five flats.
+                {"b": "-", "e": "-", "a": "-", "d": "-", "g": "-"},
+            ),
+            # Not a key name, so it falls back to reading accidentals.
+            (["e", "flat", "b"], {"e": "-"}),
         ],
     )
     def test_key_signature_from_symbols(self, symbols, expected):

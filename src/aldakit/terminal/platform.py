@@ -63,6 +63,7 @@ class TerminalMode:
         self.stream = stream or sys.stdin
         self._old: list | None = None
         self._fd: int | None = None
+        self._console = None
 
     def __enter__(self) -> TerminalMode:
         self.apply()
@@ -79,11 +80,14 @@ class TerminalMode:
     @property
     def active(self) -> bool:
         """Whether raw mode is currently applied."""
-        return self._old is not None
+        return self._old is not None or self._console is not None
 
     def apply(self) -> None:
         """Enter raw mode, if the stream is a terminal that supports it."""
-        if self._old is not None or os.name == "nt":
+        if os.name == "nt":
+            self._apply_windows()
+            return
+        if self._old is not None:
             return
         fd = self._descriptor()
         if fd is None:
@@ -111,8 +115,29 @@ class TerminalMode:
         self._old = old
         self._fd = fd
 
+    def _apply_windows(self) -> None:
+        from .windows import ConsoleModes, ConsoleUnavailable
+
+        if self._console is not None:
+            return
+        console = ConsoleModes()
+        try:
+            console.apply()
+        except ConsoleUnavailable as error:
+            raise RawModeUnavailable(str(error)) from error
+        self._console = console
+
+    @property
+    def virtual_terminal_input(self) -> bool:
+        """Whether the console delivers keys as escape sequences."""
+        return bool(getattr(self._console, "virtual_terminal_input", False))
+
     def restore(self) -> None:
         """Restore the settings captured by :meth:`apply`."""
+        if self._console is not None:
+            self._console.restore()
+            self._console = None
+            return
         if self._old is None or self._fd is None:
             return
         import termios
@@ -169,6 +194,10 @@ class TerminalReader:
                     self._queue.extend(self.decoder.flush())
                     if self._queue:
                         break
+                if timeout is None:
+                    # No deadline was asked for, so keep waiting rather than
+                    # handing back a spurious timeout for the caller to spin on.
+                    continue
                 return None
             data = self._read()
             if data is None:
