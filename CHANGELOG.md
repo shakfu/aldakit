@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Fixed
 
 - **On Windows the terminal frontend could not be driven by the stream it was given.** `TerminalMode` and the key source both worked on the process's own console handles regardless of the `input_stream` argument, where the POSIX path treats a stream owning no descriptor as a test double and leaves it alone. With no console attached -- which is every CI run, and any session started from a service or a redirected shell -- entering raw mode failed and the session dropped to line mode. Both now apply the same rule as POSIX: no descriptor, no console, read the stream's own bytes. A real console session is unchanged, and the editor loop's whole test suite now covers the Windows branches rather than silently testing the line-mode fallback.
