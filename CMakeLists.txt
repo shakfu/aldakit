@@ -47,6 +47,11 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/nanobind)
 set(LIBREMIDI_HEADER_ONLY ON)
 set(LIBREMIDI_NO_BOOST ON)
 set(LIBREMIDI_NO_NETWORK ON)
+# aldakit opens ports with the MIDI 1.0 default, WinMM on Windows. The Windows
+# MIDI Services and UWP back-ends download NuGet packages at configure time,
+# and a removed package (the MIDI 2 preview, October 2026) breaks the build.
+set(LIBREMIDI_NO_WINMIDI ON)
+set(LIBREMIDI_NO_WINUWP ON)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libremidi)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)
