@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Only `cp312-abi3` wheels are released, and Python 3.12 is the minimum.** One wheel per platform replaces five per-version wheels and covers every later CPython. nanobind's stable ABI requires 3.12. Dropping 3.10 and 3.11 was chosen over shipping non-abi3 wheels for them. The CI test matrix now spans 3.12 to 3.14.
+
+- **An abi3 build fails if CMake cannot find the limited API.** It was optional. When it was missing, nanobind fell back to a per-version extension, and scikit-build-core still tagged the wheel abi3. CI also fails on any wheel not tagged `cp312-abi3`. cibuildwheel runs `abi3audit --strict` and tests the cp312 wheel on 3.13 and 3.14.
+
+### Added
+
+- **`make abi3audit` and `make wheel-test`** check the current version's abi3 wheel in `dist/`. The first audits it for non-stable-ABI symbols. The second imports it on 3.12, 3.13 and 3.14. `make release` runs both.
+
+### Fixed
+
+- **`make release` builds macOS wheels for macOS 11.** It did not set `MACOSX_DEPLOYMENT_TARGET`, so a local wheel took the build host's version. Built on macOS 26, it was tagged `macosx_26_0` and refused by pip on any earlier macOS. CI already set the variable.
+
 ## [0.5.0]
 
 aldakit's output is now checked against Alda 2.4.7 itself, and all 60 example and shared-suite scores match it. The first comparison found the defects fixed below. **16 examples play different notes or timings**, every part's level changes with the new CC 11 default, and the golden MIDI and audio fixtures are regenerated.

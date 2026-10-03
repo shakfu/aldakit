@@ -1,5 +1,5 @@
 # _libremidi nanobind extension module
-nanobind_add_module(_libremidi aldakit/_libremidi.cpp)
+nanobind_add_module(_libremidi STABLE_ABI aldakit/_libremidi.cpp)
 target_link_libraries(_libremidi PUBLIC libremidi)
 
 # What goes in the wheel. The build tree is where the artifacts live; they
@@ -8,7 +8,7 @@ target_link_libraries(_libremidi PUBLIC libremidi)
 install(TARGETS _libremidi LIBRARY DESTINATION aldakit)
 
 # _tsf nanobind extension module (TinySoundFont + miniaudio)
-nanobind_add_module(_tsf aldakit/_tsf.cpp)
+nanobind_add_module(_tsf STABLE_ABI aldakit/_tsf.cpp)
 target_include_directories(_tsf PRIVATE
     ${CMAKE_SOURCE_DIR}/thirdparty/TinySoundFont
     ${CMAKE_SOURCE_DIR}/thirdparty/miniaudio

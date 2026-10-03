@@ -37,9 +37,11 @@ if (APPLE)
     endif()
 endif()
 
-find_package(Python 3.10
-  REQUIRED COMPONENTS Interpreter Development.Module
-  OPTIONAL_COMPONENTS Development.SABIModule)
+# scikit-build-core sets SKBUILD_SABI_COMPONENT for abi3 builds. Requiring it
+# fails the build rather than letting nanobind fall back to a version-specific
+# extension inside an abi3-tagged wheel.
+find_package(Python 3.12
+  REQUIRED COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/nanobind)
 

@@ -5,7 +5,7 @@ endef
 
 
 .PHONY: all sync resync build test clean format lint fix typecheck check  \
-		reset publish publish-test assets qa wheel release \
+		reset publish publish-test assets qa wheel release abi3audit wheel-test \
 		coverage docs docs-serve docs-deploy \
 		golden golden-audio soundfont test-audio instruments generated alda-diff shared-suite
 
@@ -22,13 +22,27 @@ build:
 wheel:
 	@uv build --wheel
 
+VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+ABI3_WHEEL = dist/aldakit-$(VERSION)-cp312-abi3-*.whl
+
+# Only cp312-abi3 wheels are released: one wheel serves 3.12 and later.
 release:
 	@uv build --sdist
-	@uv build --wheel --python 3.10
-	@uv build --wheel --python 3.11
-	@uv build --wheel --python 3.12
-	@uv build --wheel --python 3.13
-	@uv build --wheel --python 3.14
+	@MACOSX_DEPLOYMENT_TARGET=11.0 uv build --wheel --python 3.12
+	@$(MAKE) abi3audit wheel-test
+
+# Check the wheels use only the stable ABI. CI runs the same check.
+abi3audit:
+	@uvx abi3audit --strict --report $(ABI3_WHEEL)
+
+# Import the abi3 wheel on each supported interpreter, as CI does.
+wheel-test:
+	@for v in 3.12 3.13 3.14; do \
+		echo "python $$v"; \
+		uv run --isolated --no-project --python $$v \
+			--with $$(ls $(ABI3_WHEEL)) \
+			python -c "from aldakit import parse; print(parse('piano: c d e'))" || exit 1; \
+	done
 
 test:
 	@uv run python -m pytest tests/ -v

@@ -23,7 +23,7 @@ A Python parser and MIDI generator for the [Alda](https://alda.io) music program
 
 ### Installation
 
-Requires Python 3.10+
+Requires Python 3.12+
 
 ```sh
 pip install aldakit

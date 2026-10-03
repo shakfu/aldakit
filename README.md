@@ -1,6 +1,6 @@
 # aldakit
 
-[![PyPI version](https://badge.fury.io/py/aldakit.svg)](https://pypi.org/project/aldakit/) [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/aldakit.svg)](https://pypi.org/project/aldakit/) [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Python parser and MIDI generator for the [Alda](https://alda.io) music programming language, with no install-time dependencies[^1].
 
@@ -42,7 +42,7 @@ A Python parser and MIDI generator for the [Alda](https://alda.io) music program
 
 ## Installation
 
-Requires Python 3.10+
+Requires Python 3.12+
 
 ```sh
 pip install aldakit
