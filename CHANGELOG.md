@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
-
-- **The Windows build failed to configure.** libremidi's Windows MIDI Services back-end downloads a MIDI 2 preview NuGet package from Microsoft's GitHub releases at configure time, and Microsoft removed it (404), so the build stopped at a missing `.winmd`. aldakit uses only libremidi's MIDI 1.0 default, WinMM, so the Windows MIDI Services and UWP back-ends are now disabled, and the Windows build downloads nothing.
-
 ## [0.5.0]
 
 aldakit's output is now checked against Alda 2.4.7 itself, and all 60 example and shared-suite scores match it. The first comparison found the defects fixed below. **16 examples play different notes or timings**, every part's level changes with the new CC 11 default, and the golden MIDI and audio fixtures are regenerated.
@@ -35,6 +31,8 @@ aldakit's output is now checked against Alda 2.4.7 itself, and all 60 example an
 - **Plain `ruff check` and `ty check` now match CI.** Ruff excludes `thirdparty/`, and ty checks only `src/aldakit`. CMake's minimum Python is raised from 3.8 to 3.10 to match `requires-python`.
 
 ### Fixed
+
+- **The Windows build failed to configure.** libremidi's Windows MIDI Services back-end downloads a MIDI 2 preview NuGet package from Microsoft's GitHub releases at configure time, and Microsoft removed it (404), so the build stopped at a missing `.winmd`. aldakit uses only libremidi's MIDI 1.0 default, WinMM, so the Windows MIDI Services and UWP back-ends are now disabled, and the Windows build downloads nothing.
 
 - **A chord advanced by its longest note.** `docs/alda-language/chords.md` says the next event follows the shortest. A rest in a chord also counts, and no longer moves the chord's later notes.
 
