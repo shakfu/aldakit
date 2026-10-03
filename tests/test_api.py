@@ -446,6 +446,14 @@ class TestScoreSave:
         content = alda_path.read_text(encoding="utf-8")
         assert "piano" in content
 
+    def test_save_uppercase_alda_extension(self, tmp_path):
+        """Suffix matching ignores case."""
+        alda_path = tmp_path / "OUTPUT.ALDA"
+
+        Score("piano: c d e").save(alda_path)
+
+        assert "piano" in alda_path.read_text(encoding="utf-8")
+
     def test_save_unknown_extension(self, tmp_path):
         """Save with unknown extension defaults to MIDI."""
         score = Score("piano: c d e")
@@ -471,6 +479,11 @@ class TestScorePlay:
             score.play(backend="audio")
 
         assert "not available" in str(exc_info.value)
+
+    def test_play_unknown_backend_raises(self):
+        """A misspelled backend is rejected rather than falling back to MIDI."""
+        with pytest.raises(ValueError, match="audoi"):
+            Score("piano: c d e").play(backend="audoi")
 
 
 class TestAstToAlda:

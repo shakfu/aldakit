@@ -64,7 +64,7 @@ class TestDynamicsSingleSource:
 
     @pytest.mark.parametrize(
         ("marking", "velocity"),
-        [("pppppp", 1), ("pp", 39), ("mf", 69), ("f", 79), ("ffffff", 127)],
+        [("pppppp", 1), ("pp", 40), ("mf", 69), ("f", 79), ("ffffff", 127)],
     )
     def test_dynamic_marking_uses_constant_velocity(self, marking, velocity):
         from aldakit import Score

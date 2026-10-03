@@ -35,7 +35,7 @@ def durations(sequence, channel: int) -> list[float]:
 
 
 class TestChordTiming:
-    """A chord advances each part by its own longest note."""
+    """A chord advances each part by its own shortest note."""
 
     def test_divergent_tempo_parts_keep_their_own_clock(self):
         # violin: quarter = 1.0s, viola: quarter = 0.25s.
@@ -53,9 +53,9 @@ class TestChordTiming:
         # viola: note at 0, chord at 0.25, next note one viola quarter later.
         assert starts(sequence, 1) == pytest.approx([0.0, 0.25, 0.25, 0.25, 0.5])
 
-    def test_chord_length_is_the_longest_note_per_part(self):
-        # The chord's longest note is a half note, which is 2.0s for the
-        # violin and 0.5s for the viola.
+    def test_chord_length_is_the_shortest_note_per_part(self):
+        # The chord's shortest note is a quarter note, which is 1.0s for the
+        # violin and 0.25s for the viola (docs/alda-language/chords.md).
         sequence = generate(
             """
             violin: (tempo 60) o4
@@ -65,8 +65,8 @@ class TestChordTiming:
             viola: c4
             """
         )
-        assert starts(sequence, 0)[-1] == pytest.approx(2.0)
-        assert starts(sequence, 1)[-1] == pytest.approx(0.5)
+        assert starts(sequence, 0)[-1] == pytest.approx(1.0)
+        assert starts(sequence, 1)[-1] == pytest.approx(0.25)
 
     def test_divergent_default_duration_parts_keep_their_own_clock(self):
         # Same tempo, but set-duration differs, so an undotted chord is a

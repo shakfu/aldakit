@@ -4,8 +4,6 @@
 
 ## High
 
-- [ ] **Note-level channel reuse**: a channel is freed when the part on it stops sounding, which is enough for every bundled example. Alda decides this per note, so a score where more than 15 parts overlap in span but not in individual notes still reports `too-many-parts`.
-
 ## Medium
 
 - [ ] **`--monitor` and `--metronome` CLI helpers**: Provide real-time grid tracking aids for live transcription workflows.

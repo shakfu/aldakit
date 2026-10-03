@@ -621,6 +621,15 @@ class TestMain:
         out = capsys.readouterr().out
         assert "TestPort" in out
 
+    def test_invalid_config_is_an_error_not_a_traceback(self, monkeypatch, capsys):
+        def bad_config():
+            raise ValueError("config.ini: backend must be one of ('midi', 'audio')")
+
+        monkeypatch.setattr("aldakit.cli.load_config", bad_config)
+
+        assert main(["ports", "-o"]) == 1
+        assert "Error: config.ini: backend" in capsys.readouterr().err
+
     def test_eval_command(self, monkeypatch, tmp_path):
         """Test 'aldakit eval' command with output file."""
 

@@ -1,6 +1,6 @@
 [project]
 name = "aldakit"
-version = "0.4.0"
+version = "0.5.0"
 description = "Python parser and MIDI generator for the Alda music programming language"
 readme = "README.md"
 license = "MIT"
@@ -86,13 +86,14 @@ omit = [
 ]
 
 [tool.ruff]
-exclude = ["src/aldakit/ext"]
+exclude = ["src/aldakit/ext", "thirdparty"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E501"]
 
 [tool.ty.src]
+include = ["src/aldakit"]
 exclude = [
     "src/aldakit/ext",
 ]

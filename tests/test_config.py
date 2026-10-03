@@ -183,6 +183,12 @@ verbose = true
         assert config.tempo == 140
         assert config.verbose is True
 
+    def test_unknown_backend_raises(self, tmp_path):
+        config_file = tmp_path / "config.ini"
+        config_file.write_text("[aldakit]\nbackend = audoi\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="audoi"):
+            _load_file(Config(), config_file)
+
     def test_partial_settings(self, tmp_path):
         config_file = tmp_path / "config.ini"
         config_file.write_text(

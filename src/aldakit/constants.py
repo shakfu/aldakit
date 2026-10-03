@@ -11,11 +11,16 @@ DEFAULT_VIRTUAL_PORT_NAME = "AldakitMIDI"
 DEFAULT_TEMPO = 120  # BPM
 DEFAULT_OCTAVE = 4
 DEFAULT_VOLUME = 69  # MIDI velocity (0-127), ~54% of max, corresponds to mf
-DEFAULT_QUANTIZATION = 0.9  # Note length as fraction of duration (0.0-1.0)
+DEFAULT_QUANTIZATION = 0.9  # Note length as fraction of duration
 DEFAULT_DURATION = 1.0  # Duration in beats
+# Controller values Alda sends when a channel is first used: panning 50 and
+# track-volume 100/127, scaled to 0-127 and rounded.
+DEFAULT_PAN = 64
+DEFAULT_TRACK_VOLUME = 100
 
 # Backend
 DEFAULT_BACKEND = "midi"
+BACKENDS = ("midi", "audio")
 
 # =============================================================================
 # MIDI PROTOCOL CONSTANTS
@@ -26,8 +31,6 @@ MIDI_MAX_CHANNELS = 16  # Channels 0-15
 MIDI_DRUM_CHANNEL = 9  # Channel 10 (0-indexed) is reserved for drums
 
 # Value limits
-MIDI_MAX_VELOCITY = 127
-MIDI_MIN_VELOCITY = 0
 MIDI_MAX_CONTROL_VALUE = 127
 MIDI_MAX_NOTE = 127
 MIDI_MIN_NOTE = 0
@@ -43,8 +46,8 @@ MIDI_CHANNEL_MASK = 0x0F  # Lower 4 bits for channel
 MIDI_DATA_MASK = 0x7F  # Lower 7 bits for data bytes
 
 # Control Change numbers
-MIDI_CC_VOLUME = 7  # Channel volume, what Alda calls track-volume
 MIDI_CC_PAN = 10
+MIDI_CC_EXPRESSION = 11  # What Alda sends track-volume as
 MIDI_CC_ALL_NOTES_OFF = 123
 
 # =============================================================================
@@ -118,24 +121,24 @@ BEATS_PER_WHOLE_NOTE = 4.0
 
 # Maps dynamic markings to MIDI velocity values (0-127).
 #
-# Alda defines dynamics as volume levels on a 0-100 scale, and volume maps to
-# velocity as velocity = volume * 127 / 100. The comment on each entry is the
-# volume it comes from.
+# The velocities Alda sends: its DynamicVolumes fractions times 127, rounded
+# (client/model/attributes.go). The volumes in docs/alda-language/attributes.md
+# are rounded, so converting them gives different velocities for pp, p and mp.
 DYNAMICS_VELOCITY: dict[str, int] = {
-    "pppppp": 1,  # vol=1
-    "ppppp": 10,  # vol=8
-    "pppp": 20,  # vol=16
-    "ppp": 30,  # vol=24
-    "pp": 39,  # vol=31
-    "p": 50,  # vol=39
-    "mp": 58,  # vol=46
-    "mf": 69,  # vol=54, the default
-    "f": 79,  # vol=62
-    "ff": 88,  # vol=69
-    "fff": 98,  # vol=77
-    "ffff": 108,  # vol=85
-    "fffff": 117,  # vol=92
-    "ffffff": 127,  # vol=100
+    "pppppp": 1,
+    "ppppp": 11,
+    "pppp": 20,
+    "ppp": 30,
+    "pp": 40,
+    "p": 49,
+    "mp": 59,
+    "mf": 69,  # the default
+    "f": 79,
+    "ff": 88,
+    "fff": 98,
+    "ffff": 108,
+    "fffff": 117,
+    "ffffff": 127,
 }
 
 # =============================================================================

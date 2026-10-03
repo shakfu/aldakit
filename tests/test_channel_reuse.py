@@ -23,7 +23,7 @@ import pytest
 
 from aldakit import parse
 from aldakit.analysis import ERROR, inspect_score, lint_score
-from aldakit.constants import MIDI_CC_PAN, MIDI_CC_VOLUME, MIDI_DRUM_CHANNEL
+from aldakit.constants import MIDI_CC_EXPRESSION, MIDI_CC_PAN, MIDI_DRUM_CHANNEL
 from aldakit.midi.channels import (
     CONTROL_DEFAULTS,
     MELODIC_CHANNELS,
@@ -108,9 +108,13 @@ class TestReuseIsAFallback:
         assert [n.channel for n in by_time] == list(MELODIC_CHANNELS)
         assert generator.channel_assignment.reused is False
 
-    def test_a_short_score_puts_every_program_change_at_the_start(self):
+    def test_each_program_change_comes_with_the_parts_first_note(self):
         _, sequence = generate(sequential(15))
-        assert {p.time for p in sequence.program_changes} == {0.0}
+        first_note = {}
+        for note in sorted(sequence.notes, key=lambda n: n.start_time):
+            first_note.setdefault(note.channel, note.start_time)
+        assert {p.channel: p.time for p in sequence.program_changes} == first_note
+        assert len(sequence.program_changes) == 15
 
     def test_one_part_is_still_channel_zero(self):
         _, sequence = generate("piano: c d e")
@@ -239,7 +243,7 @@ class TestStateFollowsThePart:
         _, sequence = generate(self._score("(track-volume 20) c1 r1*20 c1"))
         last = max(sequence.notes, key=lambda n: n.start_time)
         expected = int(20 * 127 / 100)
-        assert control_at(sequence, 0, MIDI_CC_VOLUME, last.start_time) == expected
+        assert control_at(sequence, 0, MIDI_CC_EXPRESSION, last.start_time) == expected
 
     def test_a_borrowed_channel_does_not_inherit_the_previous_volume(self):
         _, sequence = generate(self._score("(track-volume 20) c1 r1*20 c1"))
@@ -247,8 +251,8 @@ class TestStateFollowsThePart:
             n for n in sequence.notes if n.channel == 0 and 29.0 < n.start_time < 31.0
         ]
         assert (
-            control_at(sequence, 0, MIDI_CC_VOLUME, borrower[0].start_time)
-            == (CONTROL_DEFAULTS[MIDI_CC_VOLUME])
+            control_at(sequence, 0, MIDI_CC_EXPRESSION, borrower[0].start_time)
+            == (CONTROL_DEFAULTS[MIDI_CC_EXPRESSION])
         )
 
     def test_the_instrument_is_reselected_on_return(self):
@@ -347,6 +351,31 @@ class TestEveryChannelPinned:
     def test_no_diagnostic_is_reported(self):
         generator, _ = generate(self.SOURCE)
         assert generator.diagnostics == []
+
+
+INTERLEAVED_PARTS = 20
+
+
+class TestInterleavedParts:
+    """More than 15 parts whose spans all overlap but whose notes never do."""
+
+    # Part i sounds on beats i and 20 + i, so every span covers beat 19.
+    SOURCE = "\n".join(
+        f'{INSTRUMENTS[i % len(INSTRUMENTS)]} "p{i}": '
+        f"{'r4 ' * i}c4 {'r4 ' * (INTERLEAVED_PARTS - 1)}c4"
+        for i in range(INTERLEAVED_PARTS)
+    )
+
+    def test_channels_are_reused_per_note(self):
+        generator, sequence = generate(self.SOURCE)
+        assignment = generator.channel_assignment
+        assert assignment.reused is True
+        assert assignment.overflowed is False
+        assert assignment.conflicts == []
+        assert all(0 <= n.channel <= 15 for n in sequence.notes)
+
+    def test_lints_clean(self):
+        assert lint_score(self.SOURCE) == []
 
 
 class TestOverflow:
@@ -482,7 +511,7 @@ class TestHelpers:
         controls = [
             MidiControlChange(control=MIDI_CC_PAN, value=10, time=0.0, channel=16),
             MidiControlChange(control=MIDI_CC_PAN, value=90, time=5.0, channel=16),
-            MidiControlChange(control=MIDI_CC_VOLUME, value=50, time=5.0, channel=16),
+            MidiControlChange(control=MIDI_CC_EXPRESSION, value=50, time=5.0, channel=16),
         ]
         assert _controls_at(controls, 1.0) == {MIDI_CC_PAN: 10}
-        assert _controls_at(controls, 5.0) == {MIDI_CC_PAN: 90, MIDI_CC_VOLUME: 50}
+        assert _controls_at(controls, 5.0) == {MIDI_CC_PAN: 90, MIDI_CC_EXPRESSION: 50}

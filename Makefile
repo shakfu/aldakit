@@ -7,7 +7,7 @@ endef
 .PHONY: all sync resync build test clean format lint fix typecheck check  \
 		reset publish publish-test assets qa wheel release \
 		coverage docs docs-serve docs-deploy \
-		golden golden-audio soundfont test-audio instruments generated
+		golden golden-audio soundfont test-audio instruments generated alda-diff shared-suite
 
 all: sync
 
@@ -61,7 +61,17 @@ test-audio:
 	@ALDAKIT_REQUIRE_AUDIO_FIXTURES=1 uv run python -m pytest \
 		tests/test_golden_audio.py tests/test_render.py -q
 
-generated: instruments golden
+# Rewrite tests/shared_suite/*.expected from the committed Alda exports, so
+# the suite other implementations copy records what Alda does.
+shared-suite:
+	@uv run python scripts/gen_shared_suite.py
+
+generated: instruments golden shared-suite
+
+# Compare output with the reference Alda exports in tests/alda_reference/.
+# With alda and alda-player on PATH (or ALDA_DIR=dir), missing exports are made.
+alda-diff:
+	@uv run python scripts/alda_diff.py $(if $(ALDA_DIR),--alda $(ALDA_DIR))
 
 
 

@@ -301,7 +301,8 @@ class Scanner:
         in any other position is a duration dot and is left alone.
         """
         while True:
-            if self._is_identifier_char(self._peek()):
+            # '+' as in Alda's midi-bass+lead (client/parser/scanner.go)
+            if self._is_identifier_char(self._peek()) or self._peek() == "+":
                 self._advance()
             elif self._peek() == "." and self._peek_next().isalpha():
                 self._advance()  # consume the '.'

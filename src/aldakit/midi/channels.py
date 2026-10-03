@@ -34,8 +34,10 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ..constants import (
+    DEFAULT_PAN,
+    DEFAULT_TRACK_VOLUME,
+    MIDI_CC_EXPRESSION,
     MIDI_CC_PAN,
-    MIDI_CC_VOLUME,
     MIDI_DRUM_CHANNEL,
     MIDI_MAX_CHANNELS,
 )
@@ -55,10 +57,10 @@ VIRTUAL_CHANNEL_BASE = MIDI_MAX_CHANNELS
 #: Values a controller returns to when a channel changes hands and the part
 #: taking it over does not set that controller itself. Without this the new
 #: instrument would inherit the previous one's pan or level. Both are the
-#: General MIDI power-on defaults.
+#: values Alda starts a channel with.
 CONTROL_DEFAULTS: dict[int, int] = {
-    MIDI_CC_PAN: 64,  # centre
-    MIDI_CC_VOLUME: 100,
+    MIDI_CC_PAN: DEFAULT_PAN,
+    MIDI_CC_EXPRESSION: DEFAULT_TRACK_VOLUME,
 }
 
 # Times are floats in seconds, so comparisons need a tolerance. A nanosecond is

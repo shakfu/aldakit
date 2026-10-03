@@ -26,7 +26,7 @@ from configparser import ConfigParser
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .constants import DEFAULT_BACKEND, DEFAULT_TEMPO, SOUNDFONT_ENV_VAR
+from .constants import BACKENDS, DEFAULT_BACKEND, DEFAULT_TEMPO, SOUNDFONT_ENV_VAR
 
 
 @dataclass
@@ -102,6 +102,10 @@ def _load_file(config: Config, path: Path) -> None:
             value = parser.get("aldakit", key)
             if key == "soundfont":
                 value = _expand_path(value)
+            elif key == "backend" and value not in BACKENDS:
+                raise ValueError(
+                    f"{path}: backend must be one of {BACKENDS}, got {value!r}"
+                )
             setattr(config, key, value)
             config._sources[key] = source
 

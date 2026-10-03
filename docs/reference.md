@@ -293,8 +293,8 @@ score rather than the current part, including parts declared later.
 
 ### Track volume
 
-The instrument's overall level (MIDI channel volume), as opposed to `volume`,
-which sets the velocity of individual notes:
+The instrument's overall level, sent as MIDI CC 11 (expression) as Alda does.
+`volume`, by contrast, sets the velocity of individual notes:
 
 ```alda
 (track-volume 80)  # 0-100 scale

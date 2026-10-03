@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .ast_nodes import RootNode
-from .constants import DEFAULT_SOUNDFONT_GAIN, POLL_INTERVAL_PLAYBACK
+from .constants import BACKENDS, DEFAULT_SOUNDFONT_GAIN, POLL_INTERVAL_PLAYBACK
 from .midi.render import DEFAULT_TAIL_SECONDS
 from .midi.backends import LibremidiBackend
 from .midi.generator import Diagnostic, MidiGenerator
@@ -129,18 +129,23 @@ class Score:
         >>> score.play()
     """
 
-    def __init__(self, source: str, filename: str = "<input>") -> None:
+    def __init__(
+        self, source: str, filename: str = "<input>", *, strict: bool = False
+    ) -> None:
         """Create a Score from Alda source code.
 
         Args:
             source: Alda source code string.
             filename: Optional filename for error messages.
+            strict: Raise AldaGenerationError when generating MIDI hits a
+                diagnostic, instead of recording it in ``diagnostics``.
         """
-        self._init(SourceContent(source, filename))
+        self._init(SourceContent(source, filename), strict)
 
-    def _init(self, content: ScoreContent) -> None:
+    def _init(self, content: ScoreContent, strict: bool = False) -> None:
         """Set up a score around the content it is built from."""
         self._content = content
+        self._strict = strict
         self._diagnostics: list[Diagnostic] = []
         self._playback: PlaybackHandle | None = None
 
@@ -172,11 +177,12 @@ class Score:
         return cls(source, filename)
 
     @classmethod
-    def from_file(cls, path: str | Path) -> Score:
+    def from_file(cls, path: str | Path, *, strict: bool = False) -> Score:
         """Create a Score from an Alda or MIDI file.
 
         Args:
             path: Path to the Alda (.alda) or MIDI (.mid, .midi) file.
+            strict: As for the constructor; applies to Alda files.
 
         Returns:
             A new Score instance.
@@ -189,13 +195,9 @@ class Score:
 
         if path.suffix.lower() in (".mid", ".midi"):
             return cls.from_midi_file(path)
-        elif path.suffix.lower() == ".alda":
-            source = path.read_text(encoding="utf-8")
-            return cls(source, filename=str(path))
-        else:
-            # Try to read as Alda source
-            source = path.read_text(encoding="utf-8")
-            return cls(source, filename=str(path))
+        # Anything else is read as Alda source
+        source = path.read_text(encoding="utf-8")
+        return cls(source, filename=str(path), strict=strict)
 
     @classmethod
     def from_midi_file(
@@ -294,7 +296,7 @@ class Score:
     @cached_property
     def midi(self) -> MidiSequence:
         """The generated MIDI sequence (lazily computed and cached)."""
-        generator = MidiGenerator()
+        generator = MidiGenerator(strict=self._strict)
         sequence = generator.generate(self.ast)
         self._diagnostics = list(generator.diagnostics)
         return sequence
@@ -406,6 +408,8 @@ class Score:
 
     def _make_backend(self, backend: str, port: str | None, soundfont: str | None):
         """Create the requested playback backend."""
+        if backend not in BACKENDS:
+            raise ValueError(f"backend must be one of {BACKENDS}, got {backend!r}")
         if backend == "audio":
             from .midi.backends import HAS_TSF, TsfBackend
 
@@ -443,6 +447,7 @@ class Score:
             controlling the background playback.
 
         Raises:
+            ValueError: If ``backend`` is not "midi" or "audio".
             RuntimeError: If the selected backend is not available.
             FileNotFoundError: If backend="audio" and no SoundFont is found.
 
@@ -482,9 +487,10 @@ class Score:
             path: Output file path.
         """
         path = Path(path)
-        if path.suffix in (".mid", ".midi"):
+        suffix = path.suffix.lower()
+        if suffix in (".mid", ".midi"):
             write_midi_file(self.midi, path)
-        elif path.suffix == ".alda":
+        elif suffix == ".alda":
             path.write_text(self.to_alda(), encoding="utf-8")
         else:
             # Default to MIDI

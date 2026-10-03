@@ -53,7 +53,8 @@ class TestInspect:
     def test_duration_and_tempo_map(self):
         info = inspect_score("piano: (tempo 60) c4 d4")
         assert info.duration == pytest.approx(1.9, abs=0.01)  # 1s + 0.9s quantized
-        assert [bpm for _, bpm in info.tempos] == [120.0, 60.0]
+        # A tempo at the start replaces the default rather than joining it
+        assert [bpm for _, bpm in info.tempos] == [60.0]
 
     def test_key_signature_and_transposition_are_reported(self):
         info = inspect_score("piano: (key-sig '(g minor)) (transpose 2) c")
@@ -67,8 +68,10 @@ class TestInspect:
         assert info.markers == ["start"]
 
     def test_control_changes_are_counted(self):
+        # Pan and track volume at the start (the first pan replaces the
+        # default pan), then the second pan.
         info = inspect_score("piano: (panning 25) c (pan 75) d")
-        assert info.control_change_count == 2
+        assert info.control_change_count == 3
 
     def test_findings_travel_with_the_summary(self):
         info = inspect_score("bogus-instrument: c")

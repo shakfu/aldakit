@@ -14,8 +14,11 @@ from aldakit.midi import generate_midi
 SUITE_DIR = Path(__file__).parent / "shared_suite"
 
 # Tolerance for floating point comparisons
-TIME_TOLERANCE = 0.001  # 1ms tolerance for timing
-DURATION_TOLERANCE = 0.001
+# The .expected values come from Alda's MIDI export at 128 ticks per beat
+# (scripts/gen_shared_suite.py), so they are within one tick of Alda's own
+# millisecond values. 10ms is what other implementations sharing the suite use.
+TIME_TOLERANCE = 0.01
+DURATION_TOLERANCE = 0.01
 
 
 @dataclass
@@ -120,10 +123,15 @@ def parse_expected_file(path: Path) -> ExpectedOutput:
 
 
 def parse_and_generate(alda_file: Path):
-    """Parse an Alda file and generate MIDI sequence."""
+    """Parse an Alda file and generate MIDI sequence.
+
+    Notes at velocity 0 are dropped: MIDI cannot carry them, so the .expected
+    files, written from Alda's MIDI export, cannot either (see README.md).
+    """
     text = alda_file.read_text(encoding="utf-8")
-    ast = parse(text)
-    return generate_midi(ast)
+    sequence = generate_midi(parse(text))
+    sequence.notes = [n for n in sequence.notes if n.velocity > 0]
+    return sequence
 
 
 @pytest.fixture(scope="module")
@@ -155,8 +163,9 @@ class TestNotesBasic:
             assert abs(actual.duration - exp.duration) < DURATION_TOLERANCE, (
                 f"Note {i}: duration mismatch"
             )
+            # Channels are not compared: Alda numbers them differently
+            # (docs/dev/alda-deviations.md, D1)
             assert actual.velocity == exp.velocity, f"Note {i}: velocity mismatch"
-            assert actual.channel == exp.channel, f"Note {i}: channel mismatch"
 
 
 class TestAccidentals:
@@ -181,10 +190,10 @@ class TestDurations:
         expected = parse_expected_file(SUITE_DIR / "03_notes_durations.expected")
         seq = parse_and_generate(SUITE_DIR / "03_notes_durations.alda")
 
-        actual_durations = sorted([round(n.duration, 4) for n in seq.notes])
-        expected_durations = sorted([round(n.duration, 4) for n in expected.notes])
+        actual_durations = sorted(n.duration for n in seq.notes)
+        expected_durations = sorted(n.duration for n in expected.notes)
 
-        assert actual_durations == expected_durations
+        assert actual_durations == pytest.approx(expected_durations, abs=TIME_TOLERANCE)
 
 
 class TestOctaves:
@@ -207,10 +216,10 @@ class TestRests:
         expected = parse_expected_file(SUITE_DIR / "05_rests.expected")
         seq = parse_and_generate(SUITE_DIR / "05_rests.alda")
 
-        actual_starts = sorted([round(n.start_time, 4) for n in seq.notes])
-        expected_starts = sorted([round(n.start, 4) for n in expected.notes])
+        actual_starts = sorted(n.start_time for n in seq.notes)
+        expected_starts = sorted(n.start for n in expected.notes)
 
-        assert actual_starts == expected_starts
+        assert actual_starts == pytest.approx(expected_starts, abs=TIME_TOLERANCE)
 
 
 class TestChords:
@@ -254,10 +263,10 @@ class TestTempo:
         expected = parse_expected_file(SUITE_DIR / "08_tempo.expected")
         seq = parse_and_generate(SUITE_DIR / "08_tempo.alda")
 
-        actual_durations = sorted(set(round(n.duration, 4) for n in seq.notes))
-        expected_durations = sorted(set(round(n.duration, 4) for n in expected.notes))
+        actual_durations = sorted(n.duration for n in seq.notes)
+        expected_durations = sorted(n.duration for n in expected.notes)
 
-        assert actual_durations == expected_durations
+        assert actual_durations == pytest.approx(expected_durations, abs=DURATION_TOLERANCE)
 
 
 class TestVolume:
@@ -317,10 +326,10 @@ class TestMarkers:
         seq = parse_and_generate(SUITE_DIR / "13_markers.alda")
 
         # Verify multiple channels have notes at same time points
-        actual_starts = sorted([round(n.start_time, 4) for n in seq.notes])
-        expected_starts = sorted([round(n.start, 4) for n in expected.notes])
+        actual_starts = sorted(n.start_time for n in seq.notes)
+        expected_starts = sorted(n.start for n in expected.notes)
 
-        assert actual_starts == expected_starts
+        assert actual_starts == pytest.approx(expected_starts, abs=TIME_TOLERANCE)
 
 
 class TestVoices:
@@ -398,10 +407,10 @@ class TestQuantization:
         expected = parse_expected_file(SUITE_DIR / "19_quantization.expected")
         seq = parse_and_generate(SUITE_DIR / "19_quantization.alda")
 
-        actual_durations = sorted([round(n.duration, 4) for n in seq.notes])
-        expected_durations = sorted([round(n.duration, 4) for n in expected.notes])
+        actual_durations = sorted(n.duration for n in seq.notes)
+        expected_durations = sorted(n.duration for n in expected.notes)
 
-        assert actual_durations == expected_durations
+        assert actual_durations == pytest.approx(expected_durations, abs=TIME_TOLERANCE)
 
 
 class TestPanning:

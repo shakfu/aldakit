@@ -38,6 +38,14 @@ class AldaParseError(Exception):
         return "".join(parts)
 
 
+class AldaGenerationError(Exception):
+    """A generation diagnostic, raised because generation was strict."""
+
+    def __init__(self, diagnostic) -> None:
+        self.diagnostic = diagnostic
+        super().__init__(str(diagnostic))
+
+
 class AldaScanError(AldaParseError):
     """Error during lexical analysis."""
 

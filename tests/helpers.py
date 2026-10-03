@@ -4,13 +4,30 @@ from __future__ import annotations
 
 import array
 import hashlib
+import importlib.util
 import math
+import sys
 import wave
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 EXAMPLES = PROJECT_ROOT / "examples"
 GOLDEN_DIR = Path(__file__).parent / "golden"
+
+
+def load_alda_diff():
+    """Import scripts/alda_diff.py, which is not part of a package."""
+    if "alda_diff" in sys.modules:
+        return sys.modules["alda_diff"]
+    spec = importlib.util.spec_from_file_location(
+        "alda_diff", PROJECT_ROOT / "scripts" / "alda_diff.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    # dataclasses resolve annotations through sys.modules
+    sys.modules["alda_diff"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def midi_fingerprint(sequence) -> dict:

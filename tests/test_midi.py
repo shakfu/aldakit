@@ -186,7 +186,7 @@ class TestGlobalAttributes:
 
     def test_global_volume_reaches_later_parts(self):
         seq = generate_midi(parse("(vol! 50)\npiano: c"))
-        assert seq.notes[0].velocity == 63
+        assert seq.notes[0].velocity == 64
 
     def test_global_transposition_reaches_later_parts(self):
         seq = generate_midi(parse("(transpose! 12)\npiano: c"))
@@ -262,33 +262,144 @@ class TestDurationAttributes:
         assert [round(n.duration, 3) for n in seq.notes] == [0.9, 0.9]
 
 
-class TestTrackVolume:
-    """(track-volume) is the channel level, as opposed to note velocity."""
+def _cc(seq, control):
+    """(time, channel, value) of every change to one controller."""
+    return [
+        (cc.time, cc.channel, cc.value)
+        for cc in seq.control_changes
+        if cc.control == control
+    ]
 
-    def test_emits_a_channel_volume_control_change(self):
+
+class TestTrackVolume:
+    """(track-volume) is the channel level, sent as CC 11 as Alda does."""
+
+    def test_emits_an_expression_control_change(self):
         seq = generate_midi(parse("piano: (track-volume 100) c"))
-        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(7, 127)]
+        assert _cc(seq, 11) == [(0.0, 0, 127)]
 
     def test_abbreviation(self):
         seq = generate_midi(parse("piano: (track-vol 50) c"))
-        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(7, 63)]
+        assert _cc(seq, 11) == [(0.0, 0, 64)]
 
     def test_does_not_change_note_velocity(self):
         seq = generate_midi(parse("piano: (track-volume 10) c"))
         assert seq.notes[0].velocity == 69  # still mf
 
-    def test_scores_that_never_set_it_emit_no_cc7(self):
-        seq = generate_midi(parse("piano: (vol 50) c"))
-        assert [cc for cc in seq.control_changes if cc.control == 7] == []
+    def test_every_part_starts_with_alda_defaults(self):
+        # Pan 50 and track volume 100, so a channel never keeps a previous
+        # user's values on a live synth.
+        seq = generate_midi(parse("piano: c\nviolin: c"))
+        assert _cc(seq, 10) == [(0.0, 0, 64), (0.0, 1, 64)]
+        assert _cc(seq, 11) == [(0.0, 0, 100), (0.0, 1, 100)]
+
+    def test_cc7_is_never_sent(self):
+        seq = generate_midi(parse("piano: (track-volume 50) c"))
+        assert _cc(seq, 7) == []
 
     def test_is_emitted_at_the_current_time(self):
         seq = generate_midi(parse("piano: c4 (track-volume 20) d4"))
-        assert seq.control_changes[0].time == pytest.approx(0.5)
+        assert _cc(seq, 11)[-1][0] == pytest.approx(0.5)
 
     def test_global_form_reaches_later_parts(self):
         seq = generate_midi(parse("(track-volume! 80)\npiano: c\nviolin: c"))
-        emitted = sorted((cc.channel, cc.value) for cc in seq.control_changes)
-        assert emitted == [(0, 101), (1, 101)]
+        assert _cc(seq, 11) == [(0.0, 0, 102), (0.0, 1, 102)]
+
+
+class TestChordLength:
+    """docs/alda-language/chords.md: the next event follows the shortest note."""
+
+    def test_next_note_follows_the_shortest_note(self):
+        seq = generate_midi(parse("piano: c1~1/>c/<e4 f"))
+        assert seq.notes[-1].start_time == pytest.approx(0.5)
+
+    def test_a_rest_in_a_chord_counts(self):
+        seq = generate_midi(parse("piano: c1/e/g/r4 b"))
+        assert [n.start_time for n in seq.notes] == pytest.approx([0, 0, 0, 0.5])
+
+
+class TestCramScaling:
+    """Inner lengths keep their proportions (docs/alda-language/cram-expressions.md).
+
+    Expected values were checked against alda export 2.4.7.
+    """
+
+    @staticmethod
+    def starts(source):
+        return [n.start_time for n in generate_midi(parse(source)).notes]
+
+    def test_inner_durations_are_scaled(self):
+        # A sixteenth and a quarter in a quarter: 1:4 of 0.5s
+        assert self.starts("piano: {d+16 e4}4") == pytest.approx([0, 0.1])
+
+    def test_inner_defaults_come_from_the_part(self):
+        # Two halves crammed into a quarter, then f is a quarter
+        assert self.starts("piano: c2 {d e}4 f") == pytest.approx([0, 1.0, 1.25, 1.5])
+
+    def test_nested_crams_multiply(self):
+        assert self.starts("piano: {c d {e f g}4}2 a") == pytest.approx(
+            [0, 1 / 3, 2 / 3, 7 / 9, 8 / 9, 1.0]
+        )
+
+
+class TestVoiceState:
+    """Voices fork and merge part state as Alda does (client/model/voice.go).
+
+    Expected values were checked against alda export 2.4.7.
+    """
+
+    @staticmethod
+    def notes(source):
+        seq = generate_midi(parse(source))
+        return sorted((n.start_time, n.pitch) for n in seq.notes)
+
+    def test_a_repeated_voice_continues(self):
+        assert self.notes("piano: V1: c1 V2: e2 V1: d1 V2: f2") == pytest.approx(
+            [(0, 60), (0, 64), (1.0, 65), (2.0, 62)]
+        )
+
+    def test_voices_do_not_share_attributes(self):
+        # V1's tempo change does not reach V2
+        assert self.notes("piano: V1: c8 (tempo 60) d V2: e8 f g") == pytest.approx(
+            [(0, 60), (0, 64), (0.25, 62), (0.25, 65), (0.5, 67)]
+        )
+
+    def test_the_last_voice_to_finish_carries_on(self):
+        # V2 ends last, so its key signature applies after V0
+        source = 'piano: V1: c4 V2: (key-sig "b-") b2 V3: b4 V0: b'
+        assert self.notes(source)[-1] == pytest.approx((1.0, 70))
+
+    @staticmethod
+    def write_and_read(source):
+        """Notes as a MIDI file carries them: same-pitch overlaps on one
+        channel do not both survive."""
+        import tempfile
+        from pathlib import Path
+
+        from aldakit.midi.smf import write_midi_file
+        from aldakit.midi.smf_reader import read_midi_file
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.mid"
+            write_midi_file(generate_midi(parse(source)), path)
+            return sorted((n.start_time, n.pitch) for n in read_midi_file(path).notes)
+
+    def test_a_note_still_sounding_after_the_group_keeps_sounding(self):
+        # V1's c lasts 2s; the c after the group starts at 1s. Alda moves the
+        # part to a new channel, so both sound.
+        source = "piano: (quant 200) V1: c2 V2: e2 V0: d4 c4"
+        assert self.write_and_read(source) == pytest.approx(
+            [(0, 60), (0, 64), (1.0, 62), (1.5, 60)]
+        )
+
+    def test_the_part_moves_channel_only_when_it_must(self):
+        seq = generate_midi(parse("piano: V1: c2 V2: e2 V0: c4"))
+        assert {n.channel for n in seq.notes} == {0}
+
+    def test_unison_inside_a_group_shares_a_channel(self):
+        # Alda keeps voices on one channel, where a unison is one note
+        seq = generate_midi(parse("piano: (quant 200) V1: c2 V2: c2 V0: d4"))
+        assert {n.channel for n in seq.notes} == {0}
 
 
 class TestMidiChannel:
@@ -340,13 +451,18 @@ class TestAttributeRegistry:
     def test_documented_abbreviations_are_handled(self):
         # docs/alda-language/attributes.md lists these abbreviations.
         seq = generate_midi(parse("piano: (pan 25) c"))
-        assert [(cc.control, cc.value) for cc in seq.control_changes] == [(10, 31)]
+        assert _cc(seq, 10) == [(0.0, 0, 32)]
 
         seq = generate_midi(parse("piano: (transposition 12) c"))
         assert seq.notes[0].pitch == 72
 
         seq = generate_midi(parse("piano: (quantize 50) c4"))
         assert abs(seq.notes[0].duration - 0.25) < 0.001
+
+    def test_quant_above_100_holds_notes_longer(self):
+        # Alda does not cap quant; examples/key_signature.alda uses 200
+        seq = generate_midi(parse("piano: (quant 200) c8"))
+        assert seq.notes[0].duration == pytest.approx(0.5)
 
     def test_unknown_attribute_is_reported(self):
         from aldakit.midi.generator import MidiGenerator
@@ -366,8 +482,8 @@ class TestVolume:
     def test_volume_attribute(self):
         ast = parse("(vol 50) c")
         seq = generate_midi(ast)
-        # 50% of 127 ~ 63
-        assert seq.notes[0].velocity == 63
+        # 63.5 rounds half away from zero, as in Alda
+        assert seq.notes[0].velocity == 64
 
     def test_dynamic_marking(self):
         ast = parse("(ff) c")

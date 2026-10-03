@@ -380,7 +380,7 @@ for finding in lint_score("piano: nosuchvar"):
     # error undefined-variable Undefined variable 'nosuchvar'.
 ```
 
-`lint_score()` reports unknown instruments and attributes, undefined variables and markers, notes clamped into the MIDI range, unused and redefined variables, and parts that collide on a channel. Each finding carries a `code`, a `severity` and the source position. The `aldakit info` and `aldakit lint` commands are thin wrappers over these two functions.
+`lint_score()` reports unknown instruments and attributes, attribute values out of range, ambiguous instrument instances, undefined variables and markers, notes clamped into the MIDI range, unused and redefined variables, and parts that collide on a channel. Each finding carries a `code`, a `severity` and the source position. The `aldakit info` and `aldakit lint` commands are thin wrappers over these two functions.
 
 ### Scales and Chords
 
@@ -598,7 +598,7 @@ aldakit [--version] [-h] {repl,play,eval,info,lint,ports,soundfont,transcribe} .
 ### `play` Subcommand
 
 ```sh
-aldakit play [-v] [-e CODE] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--stdin] [--parse-only] [--no-wait] FILE
+aldakit play [-v] [-e CODE] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--stdin] [--parse-only] [--no-wait] [--strict] FILE
 ```
 
 | Option | Description |
@@ -614,11 +614,12 @@ aldakit play [-v] [-e CODE] [-o FILE] [--port NAME|INDEX] [-sf FILE] [-a] [-vp N
 | `--stdin` | Read from stdin (blank line to play) |
 | `--parse-only` | Print AST without playing |
 | `--no-wait` | Return without waiting for playback to finish (playback stops when the command exits) |
+| `--strict` | Stop with an error on any warning, as Alda does, instead of playing anyway |
 
 ### `eval` Subcommand
 
 ```sh
-aldakit eval [-v] [-o FILE] [-p NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-only] [--no-wait] CODE
+aldakit eval [-v] [-o FILE] [-p NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-only] [--no-wait] [--strict] CODE
 ```
 
 | Option | Description |
@@ -632,6 +633,7 @@ aldakit eval [-v] [-o FILE] [-p NAME|INDEX] [-sf FILE] [-a] [-vp NAME] [--parse-
 | `-sf, --soundfont FILE` | Use TinySoundFont audio backend |
 | `-a, --audio` | Use audio backend with pre-configured soundfont |
 | `-vp, --virtual-port NAME` | Custom virtual MIDI port name (default: AldakitMIDI) |
+| `--strict` | Stop with an error on any warning, as Alda does, instead of playing anyway |
 
 ### `repl` Subcommand
 
@@ -703,6 +705,7 @@ Synthesizes the score with a SoundFont and writes a 16-bit stereo WAV, with no a
 | `-sf, --soundfont FILE` | SoundFont to synthesize with (default: the one playback uses) |
 | `-g, --gain GAIN` | Volume factor, 0.0 to 2.0, where 1.0 is unity |
 | `--tail SECONDS` | Audio rendered after the last note, so release tails are not cut off |
+| `--strict` | Stop with an error on any warning, as Alda does, instead of playing anyway |
 
 A mix loud enough to clip is reported along with a gain that will not:
 
@@ -717,7 +720,7 @@ aldakit lint song.alda
 aldakit lint -e "piano: c" --strict
 ```
 
-Reports what will make a score sound wrong without playing it: unknown instruments, undefined variables and markers, unknown attributes, notes clamped into the MIDI range, unused variables, and parts that collide on a channel.
+Reports what will make a score sound wrong without playing it: unknown instruments, undefined variables and markers, unknown attributes, attribute values out of range, ambiguous instrument instances, notes clamped into the MIDI range, unused variables, and parts that collide on a channel.
 
 | Option | Description |
 | ------ | ----------- |
@@ -1030,7 +1033,7 @@ violin/viola/cello "strings":   # Multi-instrument
 (vol 80)        # Volume (0-100)
 (volume 80)
 
-(quant 90)      # Quantization/legato (0-100)
+(quant 90)      # Quantization/legato (percent; above 100 overlaps the next note)
 
 (panning 50)    # Pan (0=left, 100=right)
 
@@ -1397,6 +1400,19 @@ make test-audio    # fails rather than skips if it is missing
 ```
 
 CI runs `test-audio` on Linux and macOS.
+
+### Alda Reference
+
+The golden fixtures record what aldakit does. `tests/alda_reference/` records what Alda does: `alda export` output for every example and shared-suite score. `tests/test_alda_reference.py` fails when aldakit's MIDI differs, except for the deliberate deviations listed in `docs/dev/alda-deviations.md`. It does not need Alda installed.
+
+`tests/shared_suite/*.expected`, the language-agnostic suite other implementations copy, is generated from the same exports with `make shared-suite`.
+
+A new example needs a reference export, which does need Alda (https://alda.io/install/):
+
+```sh
+make alda-diff                  # alda and alda-player on PATH
+make alda-diff ALDA_DIR=~/alda  # or in a directory
+```
 
 ### Architecture
 

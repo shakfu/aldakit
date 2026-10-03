@@ -1,6 +1,7 @@
 """MIDI generator that converts an Alda AST to MIDI events."""
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 
 from ..ast_nodes import (
     ASTVisitor,
@@ -34,27 +35,29 @@ from ..ast_nodes import (
     VariableReferenceNode,
     VoiceGroupNode,
 )
+from ..errors import AldaGenerationError
 from ..constants import (
     BEATS_PER_WHOLE_NOTE,
     DEFAULT_DURATION,
     DEFAULT_OCTAVE,
+    DEFAULT_PAN,
     DEFAULT_QUANTIZATION,
     DEFAULT_TEMPO,
+    DEFAULT_TRACK_VOLUME,
     DEFAULT_VOLUME,
     DYNAMICS_VELOCITY,
+    MIDI_CC_EXPRESSION,
     MIDI_CC_PAN,
-    MIDI_CC_VOLUME,
     MIDI_DRUM_CHANNEL,
     MIDI_MAX_CHANNELS,
     MIDI_MAX_CONTROL_VALUE,
     MIDI_MAX_NOTE,
-    MIDI_MAX_VELOCITY,
     MIDI_MIN_NOTE,
-    MIDI_MIN_VELOCITY,
     MILLISECONDS_PER_SECOND,
     SECONDS_PER_MINUTE,
 )
 from ..midi.types import (
+    MidiControlChange,
     MidiNote,
     MidiProgramChange,
     MidiSequence,
@@ -100,6 +103,16 @@ def handles(*names: str):
     return decorate
 
 
+def _percent_to_midi(percent: float) -> int:
+    """A 0-100 attribute value as a 0-127 MIDI value, rounded as Alda rounds.
+
+    Alda scales to a fraction, multiplies by 127 and rounds half away from
+    zero, so panning 50 is 64. Truncating would give 63.
+    """
+    scaled = math.floor(percent / 100 * MIDI_MAX_CONTROL_VALUE + 0.5)
+    return min(MIDI_MAX_CONTROL_VALUE, max(0, scaled))
+
+
 def _copied(value: object) -> object:
     """A copy of a mutable attribute value, so parts do not share one dict."""
     return dict(value) if isinstance(value, dict) else value
@@ -128,9 +141,11 @@ class PartState:
     octave: int = DEFAULT_OCTAVE
     tempo: float = float(DEFAULT_TEMPO)  # BPM
     volume: int = DEFAULT_VOLUME  # 0-127, default mf (54% of 127)
-    quantization: float = DEFAULT_QUANTIZATION  # 0.0-1.0, affects note duration
+    quantization: float = DEFAULT_QUANTIZATION  # Fraction of duration sounded; may exceed 1
     default_duration: float = DEFAULT_DURATION  # Beats (quarter note = 1 beat)
     current_time: float = 0.0  # Current time in seconds
+    # Factor applied to note and rest lengths inside a cram expression
+    time_scale: float = 1.0
     #: The MIDI channel this part sounds on. While the AST is being walked
     #: this is a placeholder; generate() replaces it with a real channel once
     #: the score's shape is known. -1 means the part never sounds, so it needs
@@ -143,9 +158,8 @@ class PartState:
     key_signature: dict[str, str] = field(default_factory=dict)  # note -> accidental
     transpose: int = 0  # Transposition in semitones
     percussion: bool = False  # True for midi-percussion (channel 9)
-    # Channel volume (MIDI CC 7), 0-127. None until the score sets it, so a
-    # score that never mentions track-volume emits no CC 7 at all.
-    track_volume: int | None = None
+    pan: int = DEFAULT_PAN  # MIDI CC 10, 0-127
+    track_volume: int = DEFAULT_TRACK_VOLUME  # MIDI CC 11, 0-127
 
 
 @dataclass
@@ -173,12 +187,38 @@ class GeneratorState:
     # Aliased instrument groups: alias -> {instrument name: internal part name}.
     # Populated by 'violin/viola "strings":' so that 'strings.viola:' resolves.
     groups: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Instances of each instrument, keyed by program ("percussion" for drums):
+    # whether an unnamed one exists, and whether a named one does. Alda
+    # refuses a score that refers to both.
+    unnamed_instances: set[object] = field(default_factory=set)
+    named_instances: set[object] = field(default_factory=set)
+    aliases: set[str] = field(default_factory=set)
+    # Each note with the program, pan and track volume its part had when the
+    # note was generated: (note, program or None for percussion, pan, volume).
+    note_settings: list[tuple[MidiNote, int | None, int, int]] = field(
+        default_factory=list
+    )
+    # Where each voice group ended: (part's channel, index of the part's first
+    # note after the group). See _separate_voice_group_overlaps.
+    voice_group_ends: list[tuple[int, int]] = field(default_factory=list)
+    # The MIDI tempo map, built as Alda builds it: the first declared part's
+    # tempo changes, overridden by global (tempo!) changes at the same time.
+    # Other parts' local tempos only place their own notes. Keyed by time.
+    master_part: str | None = None  # Name of the first declared part
+    master_tempos: dict[float, float] = field(default_factory=dict)
+    global_tempos: dict[float, float] = field(default_factory=dict)
 
 
 class MidiGenerator(ASTVisitor):
     """Generates MIDI events from an Alda AST."""
 
-    def __init__(self) -> None:
+    def __init__(self, strict: bool = False) -> None:
+        """
+        Args:
+            strict: Raise AldaGenerationError on the first diagnostic instead
+                of reporting it and continuing. Alda stops on these errors.
+        """
+        self.strict = strict
         self.sequence = MidiSequence()
         self.state = GeneratorState()
         self.channel_assignment = ChannelAssignment()
@@ -196,14 +236,12 @@ class MidiGenerator(ASTVisitor):
         self.state = GeneratorState()
         self.channel_assignment = ChannelAssignment()
 
-        # Add initial tempo
-        self.sequence.tempo_changes.append(
-            MidiTempoChange(bpm=self.state.global_tempo, time=0.0)
-        )
-
         # Process all children
         for child in ast.children:
             self.visit(child)
+
+        self._separate_voice_group_overlaps()
+        self._emit_channel_settings()
 
         # Turn the parts' placeholder channels into real MIDI channels, now
         # that the score's shape is known.
@@ -211,6 +249,13 @@ class MidiGenerator(ASTVisitor):
             self.sequence, self.state.allocated_channels, self._warn
         )
         self._resolve_part_channels()
+
+        tempos = {0.0: float(DEFAULT_TEMPO)}
+        tempos.update(self.state.master_tempos)
+        tempos.update(self.state.global_tempos)
+        self.sequence.tempo_changes = [
+            MidiTempoChange(bpm=bpm, time=time) for time, bpm in tempos.items()
+        ]
 
         # Sort events by time
         self.sequence.notes.sort(key=lambda n: n.start_time)
@@ -229,8 +274,11 @@ class MidiGenerator(ASTVisitor):
         return self.state.diagnostics
 
     def _warn(self, message: str, position: object = None, code: str = "") -> None:
-        """Record a non-fatal problem."""
-        self.state.diagnostics.append(Diagnostic(message, position, code))
+        """Record a non-fatal problem, or raise it when generation is strict."""
+        diagnostic = Diagnostic(message, position, code)
+        if self.strict:
+            raise AldaGenerationError(diagnostic)
+        self.state.diagnostics.append(diagnostic)
 
     def _allocate_channel(self) -> int:
         """Allocate a virtual channel for a melodic part.
@@ -284,9 +332,9 @@ class MidiGenerator(ASTVisitor):
             # Create implicit part
             self.state.current_parts = ["_default"]
             self.state.parts["_default"] = self._new_part_state(
-                channel=self._allocate_channel(),
-                program=0,
+                channel=self._allocate_channel(), program=0
             )
+            self.state.master_part = self.state.master_part or "_default"
 
         return self.state.parts[self.state.current_parts[0]]
 
@@ -355,6 +403,8 @@ class MidiGenerator(ASTVisitor):
         active_parts = []
         group_members: dict[str, str] = {}
 
+        self._check_instances(names, alias, node.declaration.position)
+
         for i, name in enumerate(names):
             # Use alias+index for group naming, or just instrument name
             if alias and len(names) > 1:
@@ -392,23 +442,14 @@ class MidiGenerator(ASTVisitor):
                         )
                     program = 0
 
-                channel = self._allocate_channel()
-
                 self.state.parts[part_name] = self._new_part_state(
-                    channel=channel,
-                    program=program,
-                )
-
-                # Add program change
-                self.sequence.program_changes.append(
-                    MidiProgramChange(
-                        program=program,
-                        time=0.0,
-                        channel=channel,
-                    )
+                    channel=self._allocate_channel(), program=program
                 )
 
             active_parts.append(part_name)
+
+        if self.state.master_part is None and active_parts:
+            self.state.master_part = active_parts[0]
 
         # Record group membership so "alias.instrument" can address one member
         if alias:
@@ -418,6 +459,37 @@ class MidiGenerator(ASTVisitor):
 
         # Process events (will be applied to all active parts)
         self.visit(node.events)
+
+    def _check_instances(self, names: list[str], alias: str | None, position) -> None:
+        """Report a score that refers to unnamed and named instances of one
+        instrument, which Alda refuses as ambiguous (doc/instance-and-group-
+        assignment.md). An aliased group is exempt when created, as in Alda.
+        """
+
+        def key(name: str) -> object:
+            return "percussion" if is_percussion(name) else lookup_instrument(name)
+
+        stock = [
+            n for n in names if n not in self.state.aliases and key(n) is not None
+        ]
+        if alias is None:
+            for name in stock:
+                if key(name) in self.state.named_instances:
+                    self._ambiguous(name, position)
+                self.state.unnamed_instances.add(key(name))
+            return
+        if len(names) == 1 and stock and key(stock[0]) in self.state.unnamed_instances:
+            self._ambiguous(stock[0], position)
+        self.state.named_instances.update(key(n) for n in stock)
+        self.state.aliases.add(alias)
+
+    def _ambiguous(self, name: str, position) -> None:
+        self._warn(
+            f"Ambiguous instrument reference {name!r}: the score uses both "
+            "named and unnamed instances of it. Name every instance.",
+            position,
+            code="ambiguous-instance",
+        )
 
     def visit_EventSequenceNode(self, node: EventSequenceNode) -> None:
         """Process a sequence of events."""
@@ -472,7 +544,9 @@ class MidiGenerator(ASTVisitor):
 
             # Calculate duration
             duration_beats = self._calculate_duration(node.duration, part)
-            duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
+            duration_secs = (
+                self._beats_to_seconds(duration_beats, part.tempo) * part.time_scale
+            )
 
             # Apply quantization (affects actual note length, not timing)
             if node.slurred:
@@ -480,7 +554,6 @@ class MidiGenerator(ASTVisitor):
             else:
                 actual_duration = duration_secs * part.quantization
 
-            # Create MIDI note
             midi_note_event = MidiNote(
                 pitch=midi_note,
                 velocity=part.volume,
@@ -489,6 +562,14 @@ class MidiGenerator(ASTVisitor):
                 channel=part.channel,
             )
             self.sequence.notes.append(midi_note_event)
+            self.state.note_settings.append(
+                (
+                    midi_note_event,
+                    None if part.percussion else part.program,
+                    part.pan,
+                    part.track_volume,
+                )
+            )
 
             # Update default duration if specified
             if node.duration is not None:
@@ -503,43 +584,50 @@ class MidiGenerator(ASTVisitor):
         return durations
 
     def visit_RestNode(self, node: RestNode) -> None:
-        """Process a rest."""
-        # Process rest for each active part (multi-instrument support)
+        self._process_rest(node)
+
+    def _process_rest(self, node: RestNode, is_chord: bool = False) -> dict[int, float]:
+        """Process a rest, returning its duration in seconds for each part.
+
+        Args:
+            node: The rest node.
+            is_chord: If True, don't advance time after the rest.
+        """
+        durations: dict[int, float] = {}
         for part in self._get_all_part_states():
             duration_beats = self._calculate_duration(node.duration, part)
-            duration_secs = self._beats_to_seconds(duration_beats, part.tempo)
-
-            # Update default duration if specified
             if node.duration is not None:
                 part.default_duration = duration_beats
-
-            # Advance time
-            part.current_time += duration_secs
+            durations[id(part)] = (
+                self._beats_to_seconds(duration_beats, part.tempo) * part.time_scale
+            )
+            if not is_chord:
+                part.current_time += durations[id(part)]
+        return durations
 
     def visit_ChordNode(self, node: ChordNode) -> None:
         """Process a chord (simultaneous notes)."""
         # Save start times for all active parts
         all_parts = self._get_all_part_states()
         start_times = {id(p): p.current_time for p in all_parts}
-        # A chord lasts as long as its longest note, which is a per-part
-        # length: in violin/viola: the two parts can be at different tempi,
-        # and advancing both by one part's duration desynchronises them.
-        max_durations: dict[int, float] = {id(p): 0.0 for p in all_parts}
+        # The next event follows the chord's shortest note or rest
+        # (docs/alda-language/chords.md). The length is per part: in
+        # violin/viola: the two parts can be at different tempi.
+        shortest: dict[int, float] = {}
 
         for item in node.notes:
             if isinstance(item, NoteNode):
-                for part_id, duration in self._process_note(
-                    item, is_chord=True
-                ).items():
-                    max_durations[part_id] = max(
-                        max_durations.get(part_id, 0.0), duration
-                    )
+                durations = self._process_note(item, is_chord=True)
+            elif isinstance(item, RestNode):
+                durations = self._process_rest(item, is_chord=True)
             else:
                 self.visit(item)
+                continue
+            for part_id, duration in durations.items():
+                shortest[part_id] = min(shortest.get(part_id, duration), duration)
 
-        # Advance each part by its own longest note in the chord
         for part in all_parts:
-            part.current_time = start_times[id(part)] + max_durations.get(id(part), 0.0)
+            part.current_time = start_times[id(part)] + shortest.get(id(part), 0.0)
 
     def visit_LispListNode(self, node: LispListNode) -> None:
         """Apply an attribute S-expression such as ``(tempo 120)``."""
@@ -581,6 +669,37 @@ class MidiGenerator(ASTVisitor):
             return float(args[0].value)
         return None
 
+    def _checked_arg(
+        self,
+        func_name: str,
+        args: list,
+        minimum: float = 0.0,
+        maximum: float | None = None,
+        positive: bool = False,
+    ) -> float | None:
+        """The first argument as a number, or None if missing or out of range.
+
+        The ranges are the ones Alda enforces (client/model/lisp.go). A value
+        outside them is reported and ignored.
+        """
+        value = self._number_arg(args)
+        if value is None:
+            return None
+        if positive and value <= minimum:
+            requirement = "a positive number"
+        elif value < minimum:
+            requirement = "a non-negative number"
+        elif maximum is not None and value > maximum:
+            requirement = f"between {minimum:g} and {maximum:g}"
+        else:
+            return value
+        self._warn(
+            f"({func_name} {value:g}): the value must be {requirement}; ignored.",
+            args[0].position,
+            code="invalid-attribute-value",
+        )
+        return None
+
     def _target_parts(self, func_name: str, parts: list[PartState]) -> list[PartState]:
         """Parts an attribute applies to.
 
@@ -610,36 +729,32 @@ class MidiGenerator(ASTVisitor):
         state = PartState(tempo=self.state.global_tempo, **kwargs)
         for field_name, value in self.state.global_attributes.items():
             setattr(state, field_name, _copied(value))
-        if state.track_volume is not None:
-            # Inherited from a global (track-volume! ...): the new part has to
-            # send the control change on its own channel.
-            self._emit_track_volume(state, 0.0)
         return state
 
     @handles("tempo", "tempo!")
     def _set_tempo(self, func_name: str, args: list, parts: list[PartState]) -> None:
         """Set the tempo in beats per minute."""
-        new_tempo = self._number_arg(args)
+        new_tempo = self._checked_arg(func_name, args, positive=True)
         if new_tempo is None:
             return
         if func_name == "tempo!":
             self.state.global_tempo = new_tempo
         self._set_attribute(func_name, parts, "tempo", new_tempo)
-        self.sequence.tempo_changes.append(
-            MidiTempoChange(bpm=new_tempo, time=parts[0].current_time if parts else 0.0)
-        )
+        if func_name == "tempo!":
+            time = parts[0].current_time if parts else 0.0
+            self.state.global_tempos[round(time, 9)] = new_tempo
+            return
+        master = self.state.parts.get(self.state.master_part or "")
+        if master is not None and any(part is master for part in parts):
+            self.state.master_tempos[round(master.current_time, 9)] = new_tempo
 
     @handles("vol", "volume", "vol!", "volume!")
     def _set_volume(self, func_name: str, args: list, parts: list[PartState]) -> None:
         """Set volume on Alda's 0-100 scale, stored as MIDI velocity."""
-        vol = self._number_arg(args)
+        vol = self._checked_arg(func_name, args, maximum=100)
         if vol is None:
             return
-        velocity = min(
-            MIDI_MAX_VELOCITY,
-            max(MIDI_MIN_VELOCITY, int(vol * MIDI_MAX_VELOCITY / 100)),
-        )
-        self._set_attribute(func_name, parts, "volume", velocity)
+        self._set_attribute(func_name, parts, "volume", _percent_to_midi(vol))
 
     @handles(
         "quant",
@@ -653,33 +768,20 @@ class MidiGenerator(ASTVisitor):
         self, func_name: str, args: list, parts: list[PartState]
     ) -> None:
         """Set the fraction of its duration a note actually sounds for."""
-        quant = self._number_arg(args)
+        quant = self._checked_arg(func_name, args)
         if quant is None:
             return
-        quantization = max(0.0, min(1.0, quant / 100.0))
-        self._set_attribute(func_name, parts, "quantization", quantization)
+        # No upper bound: Alda accepts quant above 100, which holds each note
+        # past the start of the next.
+        self._set_attribute(func_name, parts, "quantization", max(0.0, quant / 100.0))
 
     @handles("panning", "pan", "panning!", "pan!")
     def _set_panning(self, func_name: str, args: list, parts: list[PartState]) -> None:
-        """Emit a pan control change on each active part's channel."""
-        pan = self._number_arg(args)
+        """Set the pan, sent as MIDI CC 10 with the part's next note."""
+        pan = self._checked_arg(func_name, args, maximum=100)
         if pan is None:
             return
-        pan_value = min(
-            MIDI_MAX_CONTROL_VALUE,
-            max(0, int(pan * MIDI_MAX_CONTROL_VALUE / 100)),
-        )
-        from .types import MidiControlChange
-
-        for part in self._target_parts(func_name, parts):
-            self.sequence.control_changes.append(
-                MidiControlChange(
-                    control=MIDI_CC_PAN,
-                    value=pan_value,
-                    time=part.current_time,
-                    channel=part.channel,
-                )
-            )
+        self._set_attribute(func_name, parts, "pan", _percent_to_midi(pan))
 
     @handles("octave", "octave!")
     def _set_octave(self, func_name: str, args: list, parts: list[PartState]) -> None:
@@ -740,8 +842,8 @@ class MidiGenerator(ASTVisitor):
     @handles("set-duration", "set-duration!")
     def _set_duration(self, func_name: str, args: list, parts: list[PartState]) -> None:
         """Set the default note length in beats, e.g. 2.5 for a dotted half."""
-        beats = self._number_arg(args)
-        if beats is None or beats <= 0:
+        beats = self._checked_arg(func_name, args, positive=True)
+        if beats is None:
             return
         self._set_attribute(func_name, parts, "default_duration", beats)
 
@@ -750,8 +852,8 @@ class MidiGenerator(ASTVisitor):
         self, func_name: str, args: list, parts: list[PartState]
     ) -> None:
         """Set the default note length as a note value, e.g. 1 for a whole note."""
-        denominator = self._number_arg(args)
-        if denominator is None or denominator <= 0:
+        denominator = self._checked_arg(func_name, args, positive=True)
+        if denominator is None:
             return
         self._set_attribute(
             func_name, parts, "default_duration", BEATS_PER_WHOLE_NOTE / denominator
@@ -766,8 +868,8 @@ class MidiGenerator(ASTVisitor):
         Milliseconds are converted to beats per part, because parts can be at
         different tempos.
         """
-        ms = self._number_arg(args)
-        if ms is None or ms < 0:
+        ms = self._checked_arg(func_name, args, positive=True)
+        if ms is None:
             return
         for part in self._target_parts(func_name, parts):
             beats_per_second = part.tempo / SECONDS_PER_MINUTE
@@ -777,21 +879,15 @@ class MidiGenerator(ASTVisitor):
     def _set_track_volume(
         self, func_name: str, args: list, parts: list[PartState]
     ) -> None:
-        """Set the channel volume (MIDI CC 7), Alda's track-volume.
+        """Set Alda's track-volume, sent as MIDI CC 11 (expression) as Alda does.
 
         This is the instrument's overall level, as opposed to ``volume``, which
         is the velocity of individual notes.
         """
-        level = self._number_arg(args)
+        level = self._checked_arg(func_name, args, maximum=100)
         if level is None:
             return
-        value = min(
-            MIDI_MAX_CONTROL_VALUE,
-            max(0, int(level * MIDI_MAX_CONTROL_VALUE / 100)),
-        )
-        self._set_attribute(func_name, parts, "track_volume", value)
-        for part in self._target_parts(func_name, parts):
-            self._emit_track_volume(part, part.current_time)
+        self._set_attribute(func_name, parts, "track_volume", _percent_to_midi(level))
 
     @handles("midi-channel")
     def _set_midi_channel(
@@ -823,57 +919,78 @@ class MidiGenerator(ASTVisitor):
                     code="invalid-midi-channel",
                 )
                 continue
-            if part.channel == channel:
-                continue
-            previous = part.channel
+            # The part's next note selects its instrument on the new channel
             part.channel = channel
-            self._release_channel(part, previous)
-            # The instrument has to be selected again on the new channel.
-            if not part.percussion:
+
+    def _separate_voice_group_overlaps(self) -> None:
+        """Move a part to a new channel after a voice group, when it must.
+
+        Alda moves a part to a new channel after every voice group. aldakit
+        keeps the channel unless a note from before the group's end is still
+        sounding when the part plays the same pitch: on one channel the new
+        note would cut the old one off, where Alda sounds both
+        (docs/dev/alda-deviations.md, D1).
+        """
+        moved: dict[int, int] = {}  # Virtual channel -> where its later notes went
+        notes = self.sequence.notes
+        for channel, index in self.state.voice_group_ends:
+            while channel in moved:
+                channel = moved[channel]
+            later = [n for n in notes[index:] if n.channel == channel]
+            if not later:
+                continue
+            first = min(n.start_time for n in later)
+            sounding = [
+                n
+                for n in notes[:index]
+                if n.channel == channel and n.start_time + n.duration > first + 1e-9
+            ]
+            if not any(
+                e.pitch == n.pitch
+                and e.start_time <= n.start_time < e.start_time + e.duration - 1e-9
+                for e in sounding
+                for n in later
+            ):
+                continue
+            new = self._allocate_channel()
+            for n in later:
+                n.channel = new
+            moved[channel] = new
+
+    def _emit_channel_settings(self) -> None:
+        """Send the program, pan and track volume each note needs.
+
+        Walking the notes in time order, each setting is sent at a note's start
+        when it differs from what the note's channel last received. This is
+        what Alda does. It keeps parts pinned to one channel, and voices of one
+        part, from overriding each other's settings.
+        """
+        sent: dict[int, dict[str, int]] = {}
+        for note, program, pan, volume in sorted(
+            self.state.note_settings, key=lambda s: s[0].start_time
+        ):
+            channel = sent.setdefault(note.channel, {})
+            if program is not None and channel.get("program") != program:
                 self.sequence.program_changes.append(
                     MidiProgramChange(
-                        program=part.program,
-                        time=part.current_time,
-                        channel=channel,
+                        program=program, time=note.start_time, channel=note.channel
                     )
                 )
-            if part.track_volume is not None:
-                self._emit_track_volume(part, part.current_time)
-
-    def _release_channel(self, part: PartState, channel: int) -> None:
-        """Undo the program change for a channel a part left without using.
-
-        A part is given a channel when it is declared, so ``(midi-channel N)``
-        as the part's first event leaves a program change on a channel that
-        never sounds a note. Exported files show that as an empty track with
-        an instrument on it, so drop it.
-        """
-        if any(note.channel == channel for note in self.sequence.notes):
-            return
-        if any(
-            other.channel == channel
-            for other in self.state.parts.values()
-            if other is not part
-        ):
-            return
-        self.sequence.program_changes = [
-            pc for pc in self.sequence.program_changes if pc.channel != channel
-        ]
-
-    def _emit_track_volume(self, part: PartState, time: float) -> None:
-        """Emit the channel-volume control change for a part."""
-        if part.track_volume is None:
-            return
-        from .types import MidiControlChange
-
-        self.sequence.control_changes.append(
-            MidiControlChange(
-                control=MIDI_CC_VOLUME,
-                value=part.track_volume,
-                time=time,
-                channel=part.channel,
-            )
-        )
+                channel["program"] = program
+            for name, control, value in (
+                ("pan", MIDI_CC_PAN, pan),
+                ("track_volume", MIDI_CC_EXPRESSION, volume),
+            ):
+                if channel.get(name) != value:
+                    self.sequence.control_changes.append(
+                        MidiControlChange(
+                            control=control,
+                            value=value,
+                            time=note.start_time,
+                            channel=note.channel,
+                        )
+                    )
+                    channel[name] = value
 
     def _parse_key_signature(self, args: list) -> dict[str, str] | None:
         """Parse key signature from S-expression arguments.
@@ -964,53 +1081,123 @@ class MidiGenerator(ASTVisitor):
             )
 
     def visit_VoiceGroupNode(self, node: VoiceGroupNode) -> None:
-        """Process a voice group."""
-        all_parts = self._get_all_part_states()
-        start_times = {id(p): p.current_time for p in all_parts}
-        max_end_time = max(start_times.values())
+        """Fork each active part into one copy per voice, then merge them.
+
+        As in Alda (client/model/voice.go), every voice starts from the part's
+        state at the start of the group, and a voice number used again
+        continues where that voice left off. At the end, the voice that
+        finished last becomes the part, with all of its state; ties go to the
+        voice created last.
+        """
+        self._get_part_state()  # an implicit part, if none is active yet
+        names = list(self.state.current_parts)
+        templates = {name: self.state.parts[name] for name in names}
+        voices: dict[str, dict[int, PartState]] = {name: {} for name in names}
 
         for voice in node.voices:
-            # Reset to start time for each voice
-            for part in all_parts:
-                part.current_time = start_times[id(part)]
+            for name in names:
+                if voice.number not in voices[name]:
+                    template = templates[name]
+                    voices[name][voice.number] = replace(
+                        template, key_signature=dict(template.key_signature)
+                    )
+                self.state.parts[name] = voices[name][voice.number]
+            self.state.current_parts = list(names)
             self.visit(voice.events)
-            for part in all_parts:
-                max_end_time = max(max_end_time, part.current_time)
 
-        # Advance to the end of the longest voice
-        for part in all_parts:
-            part.current_time = max_end_time
+        for name in names:
+            forks = list(voices[name].values())
+            if not forks:
+                continue
+            winner = forks[-1]
+            for fork in forks[:-1]:
+                if fork.current_time > winner.current_time:
+                    winner = fork
+            self.state.parts[name] = winner
+            if not winner.percussion and winner.channel >= VIRTUAL_CHANNEL_BASE:
+                self.state.voice_group_ends.append(
+                    (winner.channel, len(self.sequence.notes))
+                )
+        self.state.current_parts = names
 
     def visit_CramNode(self, node: CramNode) -> None:
-        """Process a cram expression."""
+        """Fit the cram's events into its duration, keeping their proportions.
+
+        Each part's events are scaled by the cram's duration divided by the
+        sum of the events' own durations, as Alda does (client/model/cram.go).
+        A nested cram multiplies the scales.
+        """
         all_parts = self._get_all_part_states()
-
-        # Count the number of events (notes/rests)
-        event_count = self._count_sounding_events(node.events)
-
-        if event_count == 0:
-            return
-
-        # Save current state for all parts
-        saved_states = {id(p): (p.current_time, p.default_duration) for p in all_parts}
-
-        # The cram's length in seconds is per-part: parts can be at different
-        # tempi and, with no explicit duration, carry different defaults.
-        total_secs: dict[int, float] = {}
+        saved = {id(p): (p.default_duration, p.time_scale) for p in all_parts}
+        outer_beats: dict[int, float] = {}
         for p in all_parts:
-            total_beats = self._calculate_duration(node.duration, p)
-            total_secs[id(p)] = self._beats_to_seconds(total_beats, p.tempo)
-            # Set a temporary duration for each event in this part
-            p.default_duration = total_beats / event_count
+            outer_beats[id(p)] = self._calculate_duration(node.duration, p)
+            inner = self._inner_seconds(
+                node.events, p.default_duration, p.tempo, self.state.repetition_number
+            )[0]
+            if inner <= 0:
+                return  # nothing in the cram takes time
+            outer = self._beats_to_seconds(outer_beats[id(p)], p.tempo)
+            p.time_scale = p.time_scale * outer / inner
 
-        # Process events
         self.visit(node.events)
 
-        # Restore state and set final time for all parts
         for p in all_parts:
-            start_time, saved_duration = saved_states[id(p)]
-            p.default_duration = saved_duration
-            p.current_time = start_time + total_secs[id(p)]
+            default_duration, time_scale = saved[id(p)]
+            p.time_scale = time_scale
+            # A cram's own duration becomes the default for what follows
+            if node.duration is not None:
+                p.default_duration = outer_beats[id(p)]
+            else:
+                p.default_duration = default_duration
+
+    def _inner_seconds(
+        self, node, default_duration: float, tempo: float, repetition: int
+    ) -> tuple[float, float]:
+        """The unscaled length of ``node`` and the default duration after it.
+
+        Mirrors Alda's DurationMs: note and rest lengths carry over as defaults,
+        a chord counts its shortest note, a nested cram its own duration, and
+        attributes nothing.
+        """
+        part = PartState(tempo=tempo, default_duration=default_duration)
+
+        def secs(duration) -> float:
+            beats = self._calculate_duration(duration, part)
+            if duration is not None:
+                part.default_duration = beats
+            return self._beats_to_seconds(beats, tempo)
+
+        def walk(node, repetition: int) -> float:
+            if isinstance(node, (NoteNode, RestNode)):
+                return secs(node.duration)
+            if isinstance(node, CramNode):
+                return self._beats_to_seconds(
+                    self._calculate_duration(node.duration, part), tempo
+                )
+            if isinstance(node, ChordNode):
+                lengths = [walk(n, repetition) for n in node.notes]
+                return min((x for x in lengths if x > 0), default=0.0)
+            if isinstance(node, (EventSequenceNode,)):
+                return sum(walk(e, repetition) for e in node.events)
+            if isinstance(node, BracketedSequenceNode):
+                return walk(node.events, repetition)
+            if isinstance(node, RepeatNode):
+                return sum(walk(node.event, i + 1) for i in range(node.times))
+            if isinstance(node, OnRepetitionsNode):
+                applies = any(
+                    r.first == repetition
+                    if r.last is None
+                    else r.first <= repetition <= r.last
+                    for r in node.ranges
+                )
+                return walk(node.event, repetition) if applies else 0.0
+            if isinstance(node, VariableReferenceNode):
+                events = self.state.variables.get(node.name)
+                return walk(events, repetition) if events is not None else 0.0
+            return 0.0
+
+        return walk(node, repetition), part.default_duration
 
     def visit_RepeatNode(self, node: RepeatNode) -> None:
         """Process a repeat expression."""
@@ -1095,34 +1282,19 @@ class MidiGenerator(ASTVisitor):
         """
         return beats * SECONDS_PER_MINUTE / tempo
 
-    def _count_sounding_events(self, sequence: EventSequenceNode) -> int:
-        """Count the number of note/rest events in a sequence."""
-        count = 0
-        for event in sequence.events:
-            if isinstance(event, (NoteNode, RestNode)):
-                count += 1
-            elif isinstance(event, ChordNode):
-                count += 1  # Chord counts as one event
-            elif isinstance(event, CramNode):
-                count += 1  # Cram counts as one event
-            elif isinstance(event, BracketedSequenceNode):
-                count += self._count_sounding_events(event.events)
-            elif isinstance(event, RepeatNode):
-                inner = 1
-                if isinstance(event.event, BracketedSequenceNode):
-                    inner = self._count_sounding_events(event.event.events)
-                count += inner * event.times
-        return count
 
-
-def generate_midi(ast: RootNode) -> MidiSequence:
+def generate_midi(ast: RootNode, strict: bool = False) -> MidiSequence:
     """Convenience function to generate MIDI from an AST.
 
     Args:
         ast: The root node of the Alda AST.
+        strict: Raise on the first diagnostic; see MidiGenerator.
 
     Returns:
         A MidiSequence containing all MIDI events.
+
+    Raises:
+        AldaGenerationError: If ``strict`` and the score has a diagnostic.
     """
-    generator = MidiGenerator()
+    generator = MidiGenerator(strict=strict)
     return generator.generate(ast)

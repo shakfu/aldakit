@@ -6,9 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.4.0]
+## [0.5.0]
+
+aldakit's output is now checked against Alda 2.4.7 itself, and all 60 example and shared-suite scores match it. The first comparison found the defects fixed below. **16 examples play different notes or timings**, every part's level changes with the new CC 11 default, and the golden MIDI and audio fixtures are regenerated.
+
+### Added
+
+- **Conformance with Alda is tested.** `tests/alda_reference/2.4.7/` holds `alda export` output for every example and shared-suite score. `tests/test_alda_reference.py` fails on any difference not listed in `docs/dev/alda-deviations.md`, without needing Alda installed. `scripts/alda_diff.py` (`make alda-diff`) reports differences and creates missing exports when Alda is installed.
+
+- **The shared suite records Alda's output.** `tests/shared_suite/*.expected` were snapshots of aldakit, which other implementations copy. `scripts/gen_shared_suite.py` (`make shared-suite`) now writes them from Alda's exports; `--examples DIR` writes the same for `examples/`. Values carry tick rounding, so compare with a tolerance (10 ms covers every file). Channels follow Alda's numbering, and a note at volume 0 is absent, because MIDI cannot carry it; `tests/shared_suite/README.md` gives the rules.
+
+- **Strict generation.** `MidiGenerator(strict=True)`, `generate_midi(..., strict=True)`, `Score(..., strict=True)` and `--strict` on `play`, `eval` and `render` raise `AldaGenerationError` on the first diagnostic, as Alda stops on these errors. By default aldakit still reports and continues.
+
+- **Input Alda refuses is reported.** An attribute value outside Alda's range reports `invalid-attribute-value` and is ignored rather than clamped: volume, pan or track volume outside 0-100, negative `quant`, and a non-positive tempo or duration. A score using named and unnamed instances of one instrument reports `ambiguous-instance`. Both are lint errors. `tests/shared_suite/09_volume.alda` and `11_parts.alda` used both and are now valid Alda.
+
+### Changed
+
+- **`track-volume` is sent as CC 11, and every channel starts at Alda's pan and track volume.** aldakit sent CC 7, and sent no pan or level until a score set one, so a channel kept the previous user's values on a live synth. Each channel now gets pan 64 and CC 11 = 100 with its first note, as in Alda. Parts that never set `track-volume` are quieter than before.
+
+- **Program and controller changes are sent with the note that needs them**, when the channel's value differs, as Alda sends them. aldakit sent them at the part's declaration or at the attribute. Two parts pinned to one channel with `(midi-channel N)` overrode each other's instrument: `examples/midi-channel-management-2.alda` played its piano as a guitar. Voices with different pans on one channel overrode each other the same way.
+
+- **Unknown backend names are rejected.** `Score.play(backend=...)` and the config file's `backend` key accepted any string and treated everything but `"audio"` as MIDI, so `backend = Audio` or a typo silently played through MIDI. Both now raise `ValueError`. The CLI reports an invalid config file as an error instead of a traceback; this also covers a non-integer `tempo`.
+
+- **Plain `ruff check` and `ty check` now match CI.** Ruff excludes `thirdparty/`, and ty checks only `src/aldakit`. CMake's minimum Python is raised from 3.8 to 3.10 to match `requires-python`.
 
 ### Fixed
+
+- **A chord advanced by its longest note.** `docs/alda-language/chords.md` says the next event follows the shortest. A rest in a chord also counts, and no longer moves the chord's later notes.
+
+- **Cram expressions ignored the lengths inside them.** `{d+16 e4}4` gave the sixteenth a fixed share and left the quarter unscaled. Inner lengths are now scaled by the cram's duration over their sum, so they keep their proportions; nested crams multiply. A cram's own duration becomes the default for the next note.
+
+- **Voices shared one part state.** A tempo, octave, key signature or volume set in one voice leaked into the next, and a repeated voice number restarted at the start of the group. Each voice now starts from a copy of the part, a repeated number continues, and the voice that finishes last carries its state past `V0:`.
+
+- **`midi-bass+lead:` did not parse.** Alda allows `+` in names, and its instrument list uses it for program 87; the scanner stopped at the `+`. A test now declares every documented instrument name in a score.
+
+- **A note still sounding after a voice group could be cut off.** With `quant` above 100 a note from inside a voice group can outlast the group; when the part then played the same pitch, the new note-on on the same channel ended it. Alda sounds both, because it moves the part to a new channel after every voice group. aldakit now moves the part only when such an overlap occurs.
+
+- **`quant` was capped at 100.** Alda accepts any non-negative value; `examples/key_signature.alda` uses 200.
+
+- **Volume, pan and track volume were truncated.** Alda rounds: pan 50 is 64, not 63. The dynamics table now holds Alda's velocities rather than conversions of the rounded volumes in the docs, which changes `ppppp`, `pp`, `p` and `mp` by one.
+
+- **The tempo map had duplicate and wrong entries.** A tempo at time 0 added a second event beside the default, and every part's local tempo was written. The map is now Alda's: the first declared part's changes, overridden by `tempo!`. Note timing is unchanged.
+
+- **`Score.save()` matched suffixes case-sensitively.** `save("SONG.ALDA")` wrote MIDI bytes to a file named as Alda source. Suffixes are now compared case-insensitively, as `Score.from_file` already did.
 
 - **On Windows the terminal frontend could not be driven by the stream it was given.** `TerminalMode` and the key source both worked on the process's own console handles regardless of the `input_stream` argument, where the POSIX path treats a stream owning no descriptor as a test double and leaves it alone. With no console attached -- which is every CI run, and any session started from a service or a redirected shell -- entering raw mode failed and the session dropped to line mode. Both now apply the same rule as POSIX: no descriptor, no console, read the stream's own bytes. A real console session is unchanged, and the editor loop's whole test suite now covers the Windows branches rather than silently testing the line-mode fallback.
 

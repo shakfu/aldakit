@@ -168,7 +168,8 @@ class TestLegacyAliases:
 class TestGeneratedTableMatchesDocs:
     """The table is generated from the language docs; keep them in sync."""
 
-    def test_every_documented_name_resolves(self):
+    @staticmethod
+    def documented_names() -> list[str]:
         assert DOC_PATH.exists(), "instrument list doc is missing"
         text = DOC_PATH.read_text(encoding="utf-8")
         bullet = re.compile(
@@ -185,10 +186,29 @@ class TestGeneratedTableMatchesDocs:
                 for a in (match.group("aliases") or "").split(",")
                 if a.strip()
             )
+        return documented
 
+    def test_every_documented_name_resolves(self):
+        documented = self.documented_names()
         assert len(documented) >= 128
         unresolved = [n for n in documented if lookup_instrument(n) is None]
         assert unresolved == [], f"documented but unmapped: {unresolved}"
+
+    def test_every_documented_name_works_in_a_score(self):
+        # The table can hold a name the scanner cannot read, as midi-bass+lead
+        # once was.
+        wrong = []
+        for name in self.documented_names():
+            try:
+                sequence = generate_midi(parse(f"{name}: c"))
+            except Exception as e:
+                wrong.append((name, type(e).__name__))
+                continue
+            if [int(p.program) for p in sequence.program_changes] != [
+                lookup_instrument(name)
+            ]:
+                wrong.append((name, "wrong program"))
+        assert wrong == []
 
 
 class TestExampleFiles:

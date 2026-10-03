@@ -248,6 +248,8 @@ _ERROR_CODES = frozenset(
         "undefined-marker",
         "unknown-group-member",
         "channel-exhaustion",
+        "invalid-attribute-value",
+        "ambiguous-instance",
     }
 )
 

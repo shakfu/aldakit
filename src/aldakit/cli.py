@@ -19,7 +19,7 @@ from .constants import (
     SWING_RATIO_MAX,
     SWING_RATIO_MIN,
 )
-from .errors import AldaParseError
+from .errors import AldaGenerationError, AldaParseError
 from .midi import LibremidiBackend
 from .midi.generator import MidiGenerator
 from .midi.render import DEFAULT_TAIL_SECONDS
@@ -334,6 +334,7 @@ def create_parser() -> argparse.ArgumentParser:
             f"not cut off (default: {DEFAULT_TAIL_SECONDS})"
         ),
     )
+    _add_strict_argument(render_parser)
 
     # ------------------------------------------------------------
     # play subcommand
@@ -416,12 +417,22 @@ def _add_common_playback_arguments(
         help="Use TinySoundFont audio backend with specified SoundFont file",
     )
 
+    _add_strict_argument(parser)
+
     parser.add_argument(
         "-vp",
         "--virtual-port",
         metavar="NAME",
         default=DEFAULT_VIRTUAL_PORT_NAME,
         help=f"Name for virtual MIDI port (default: {DEFAULT_VIRTUAL_PORT_NAME})",
+    )
+
+
+def _add_strict_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Stop on any warning, as Alda does, instead of playing anyway",
     )
 
 
@@ -714,8 +725,12 @@ def render_command(args: argparse.Namespace) -> int:
         print(f"Parse error: {e}", file=sys.stderr)
         return 1
 
-    generator = MidiGenerator()
-    sequence = generator.generate(ast)
+    generator = MidiGenerator(strict=args.strict)
+    try:
+        sequence = generator.generate(ast)
+    except AldaGenerationError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     for diagnostic in generator.diagnostics:
         print(f"Warning: {diagnostic}", file=sys.stderr)
     if not sequence.notes:
@@ -1226,7 +1241,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Load configuration from files
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
     # Handle subcommands
     if args.command == "repl":
@@ -1365,8 +1384,12 @@ def main(argv: list[str] | None = None) -> int:
     if verbose:
         print("Generating MIDI...", file=sys.stderr)
 
-    generator = MidiGenerator()
-    sequence = generator.generate(ast)
+    generator = MidiGenerator(strict=getattr(args, "strict", False))
+    try:
+        sequence = generator.generate(ast)
+    except AldaGenerationError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
     # Report problems that do not stop generation but change what is heard
     for diagnostic in generator.diagnostics:
