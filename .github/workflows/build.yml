@@ -183,7 +183,7 @@ jobs:
           platforms: arm64
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2.0
+        uses: pypa/cibuildwheel@v4.3.0
         # Configuration is in pyproject.toml [tool.cibuildwheel]. cibuildwheel
         # runs abi3audit --strict on each abi3 wheel by default.
 
