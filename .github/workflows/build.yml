@@ -24,6 +24,10 @@ jobs:
     # These take one to five minutes. Anything close to this limit means
     # something outside the workflow has stopped responding.
     timeout-minutes: 25
+    # Every uv command, not only `uv sync`, must use the matrix interpreter.
+    # Otherwise `uv run` honours .python-version (3.13) and rebuilds .venv.
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +71,7 @@ jobs:
           enable-cache: true
 
       - name: Install project
-        run: uv sync --python ${{ matrix.python-version }}
+        run: uv sync
 
       - name: Lint
         run: uv run ruff check src/ tests/ scripts/
