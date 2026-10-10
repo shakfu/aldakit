@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Tested to work on python3.15** All tests pass without issue
+
 - **`make abi3audit` and `make wheel-test`** check the current version's abi3 wheel in `dist/`. The first audits it for non-stable-ABI symbols. The second imports it on 3.12, 3.13 and 3.14. `make release` runs both.
 
 ### Fixed
