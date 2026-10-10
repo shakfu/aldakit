@@ -32,7 +32,7 @@ jobs:
         # the Python version. 3.12 is the abi3 floor the wheel is built
         # against; 3.14 is the newest interpreter it must load in.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.12", "3.14"]
+        python-version: ["3.12", "3.15"]
         include:
           # The middle of the range on the cheapest runner: a problem that
           # depends on the Python version rarely also depends on the OS.
